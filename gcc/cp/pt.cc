@@ -20678,7 +20678,7 @@ tsubst_copy_and_build (tree t,
 	   build_x_modify_expr sets it and it must not be reset
 	   here.  */
 	if (warning_suppressed_p (t, OPT_Wparentheses))
-	  suppress_warning (r, OPT_Wparentheses);
+	  suppress_warning (STRIP_REFERENCE_REF (r), OPT_Wparentheses);
 
 	RETURN (r);
       }
