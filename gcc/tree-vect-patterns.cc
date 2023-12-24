@@ -120,6 +120,7 @@ vect_init_pattern_stmt (vec_info *vinfo, gimple *pattern_stmt,
   if (!STMT_VINFO_VECTYPE (pattern_stmt_info))
     {
       gcc_assert (!vectype
+		  || is_a <gcond *> (pattern_stmt)
 		  || (VECTOR_BOOLEAN_TYPE_P (vectype)
 		      == vect_use_mask_type_p (orig_stmt_info)));
       STMT_VINFO_VECTYPE (pattern_stmt_info) = vectype;
@@ -1819,6 +1820,396 @@ vect_recog_widen_sum_pattern (vec_info *vinfo,
 
   return pattern_stmt;
 }
+
+/* Function vect_recog_bitfield_ref_pattern
+
+   Try to find the following pattern:
+
+   bf_value = BIT_FIELD_REF (container, bitsize, bitpos);
+   result = (type_out) bf_value;
+
+   or
+
+   if (BIT_FIELD_REF (container, bitsize, bitpos) `cmp` <constant>)
+
+   where type_out is a non-bitfield type, that is to say, it's precision matches
+   2^(TYPE_SIZE(type_out) - (TYPE_UNSIGNED (type_out) ? 1 : 2)).
+
+   Input:
+
+   * STMT_VINFO: The stmt from which the pattern search begins.
+   here it starts with:
+   result = (type_out) bf_value;
+
+   or
+
+   if (BIT_FIELD_REF (container, bitsize, bitpos) `cmp` <constant>)
+
+   Output:
+
+   * TYPE_OUT: The vector type of the output of this pattern.
+
+   * Return value: A new stmt that will be used to replace the sequence of
+   stmts that constitute the pattern. If the precision of type_out is bigger
+   than the precision type of _1 we perform the widening before the shifting,
+   since the new precision will be large enough to shift the value and moving
+   widening operations up the statement chain enables the generation of
+   widening loads.  If we are widening and the operation after the pattern is
+   an addition then we mask first and shift later, to enable the generation of
+   shifting adds.  In the case of narrowing we will always mask first, shift
+   last and then perform a narrowing operation.  This will enable the
+   generation of narrowing shifts.
+
+   Widening with mask first, shift later:
+   container = (type_out) container;
+   masked = container & (((1 << bitsize) - 1) << bitpos);
+   result = masked >> bitpos;
+
+   Widening with shift first, mask last:
+   container = (type_out) container;
+   shifted = container >> bitpos;
+   result = shifted & ((1 << bitsize) - 1);
+
+   Narrowing:
+   masked = container & (((1 << bitsize) - 1) << bitpos);
+   result = masked >> bitpos;
+   result = (type_out) result;
+
+   If the bitfield is signed and it's wider than type_out, we need to
+   keep the result sign-extended:
+   container = (type) container;
+   masked = container << (prec - bitsize - bitpos);
+   result = (type_out) (masked >> (prec - bitsize));
+
+   Here type is the signed variant of the wider of type_out and the type
+   of container.
+
+   The shifting is always optional depending on whether bitpos != 0.
+
+   When the original bitfield was inside a gcond then an new gcond is also
+   generated with the newly `result` as the operand to the comparison.
+
+*/
+
+static gimple *
+vect_recog_bitfield_ref_pattern (vec_info *vinfo, stmt_vec_info stmt_info,
+				 tree *type_out)
+{
+  gimple *bf_stmt = NULL;
+  tree lhs = NULL_TREE;
+  tree ret_type = NULL_TREE;
+  gimple *stmt = STMT_VINFO_STMT (stmt_info);
+  if (gcond *cond_stmt = dyn_cast <gcond *> (stmt))
+    {
+      tree op = gimple_cond_lhs (cond_stmt);
+      if (TREE_CODE (op) != SSA_NAME)
+	return NULL;
+      bf_stmt = dyn_cast <gassign *> (SSA_NAME_DEF_STMT (op));
+      if (TREE_CODE (gimple_cond_rhs (cond_stmt)) != INTEGER_CST)
+	return NULL;
+    }
+  else if (is_gimple_assign (stmt)
+	   && CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (stmt))
+	   && TREE_CODE (gimple_assign_rhs1 (stmt)) == SSA_NAME)
+    {
+      gimple *second_stmt = SSA_NAME_DEF_STMT (gimple_assign_rhs1 (stmt));
+      bf_stmt = dyn_cast <gassign *> (second_stmt);
+      lhs = gimple_assign_lhs (stmt);
+      ret_type = TREE_TYPE (lhs);
+    }
+
+  if (!bf_stmt
+      || gimple_assign_rhs_code (bf_stmt) != BIT_FIELD_REF)
+    return NULL;
+
+  tree bf_ref = gimple_assign_rhs1 (bf_stmt);
+  tree container = TREE_OPERAND (bf_ref, 0);
+  ret_type = ret_type ? ret_type : TREE_TYPE (container);
+
+  if (!bit_field_offset (bf_ref).is_constant ()
+      || !bit_field_size (bf_ref).is_constant ()
+      || !tree_fits_uhwi_p (TYPE_SIZE (TREE_TYPE (container))))
+    return NULL;
+
+  if (!INTEGRAL_TYPE_P (TREE_TYPE (bf_ref))
+      || !INTEGRAL_TYPE_P (TREE_TYPE (container))
+      || TYPE_MODE (TREE_TYPE (container)) == E_BLKmode)
+    return NULL;
+
+  gimple *use_stmt, *pattern_stmt;
+  use_operand_p use_p;
+  bool shift_first = true;
+  tree container_type = TREE_TYPE (container);
+  tree vectype = get_vectype_for_scalar_type (vinfo, container_type);
+
+  /* Calculate shift_n before the adjustments for widening loads, otherwise
+     the container may change and we have to consider offset change for
+     widening loads on big endianness.  The shift_n calculated here can be
+     independent of widening.  */
+  unsigned HOST_WIDE_INT shift_n = bit_field_offset (bf_ref).to_constant ();
+  unsigned HOST_WIDE_INT mask_width = bit_field_size (bf_ref).to_constant ();
+  unsigned HOST_WIDE_INT prec = tree_to_uhwi (TYPE_SIZE (container_type));
+  if (BYTES_BIG_ENDIAN)
+    shift_n = prec - shift_n - mask_width;
+
+  bool ref_sext = (!TYPE_UNSIGNED (TREE_TYPE (bf_ref)) &&
+		   TYPE_PRECISION (ret_type) > mask_width);
+  bool load_widen = (TYPE_PRECISION (TREE_TYPE (container)) <
+		     TYPE_PRECISION (ret_type));
+
+  /* We move the conversion earlier if the loaded type is smaller than the
+     return type to enable the use of widening loads.  And if we need a
+     sign extension, we need to convert the loaded value early to a signed
+     type as well.  */
+  if (ref_sext || load_widen)
+    {
+      tree type = load_widen ? ret_type : container_type;
+      if (ref_sext)
+	type = gimple_signed_type (type);
+      pattern_stmt = gimple_build_assign (vect_recog_temp_ssa_var (type),
+					  NOP_EXPR, container);
+      container = gimple_get_lhs (pattern_stmt);
+      container_type = TREE_TYPE (container);
+      prec = tree_to_uhwi (TYPE_SIZE (container_type));
+      vectype = get_vectype_for_scalar_type (vinfo, container_type);
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt, vectype);
+    }
+  else if (!useless_type_conversion_p (TREE_TYPE (container), ret_type))
+    /* If we are doing the conversion last then also delay the shift as we may
+       be able to combine the shift and conversion in certain cases.  */
+    shift_first = false;
+
+  /* If the only use of the result of this BIT_FIELD_REF + CONVERT is a
+     PLUS_EXPR then do the shift last as some targets can combine the shift and
+     add into a single instruction.  */
+  if (lhs && single_imm_use (lhs, &use_p, &use_stmt))
+    {
+      if (gimple_code (use_stmt) == GIMPLE_ASSIGN
+	  && gimple_assign_rhs_code (use_stmt) == PLUS_EXPR)
+	shift_first = false;
+    }
+
+  /* If we don't have to shift we only generate the mask, so just fix the
+     code-path to shift_first.  */
+  if (shift_n == 0)
+    shift_first = true;
+
+  tree result;
+  if (shift_first && !ref_sext)
+    {
+      tree shifted = container;
+      if (shift_n)
+	{
+	  pattern_stmt
+	    = gimple_build_assign (vect_recog_temp_ssa_var (container_type),
+				   RSHIFT_EXPR, container,
+				   build_int_cst (sizetype, shift_n));
+	  shifted = gimple_assign_lhs (pattern_stmt);
+	  append_pattern_def_seq (vinfo, stmt_info, pattern_stmt, vectype);
+	}
+
+      tree mask = wide_int_to_tree (container_type,
+				    wi::mask (mask_width, false, prec));
+
+      pattern_stmt
+	= gimple_build_assign (vect_recog_temp_ssa_var (container_type),
+			       BIT_AND_EXPR, shifted, mask);
+      result = gimple_assign_lhs (pattern_stmt);
+    }
+  else
+    {
+      tree temp = vect_recog_temp_ssa_var (container_type);
+      if (!ref_sext)
+	{
+	  tree mask = wide_int_to_tree (container_type,
+					wi::shifted_mask (shift_n,
+							  mask_width,
+							  false, prec));
+	  pattern_stmt = gimple_build_assign (temp, BIT_AND_EXPR,
+					      container, mask);
+	}
+      else
+	{
+	  HOST_WIDE_INT shl = prec - shift_n - mask_width;
+	  shift_n += shl;
+	  pattern_stmt = gimple_build_assign (temp, LSHIFT_EXPR,
+					      container,
+					      build_int_cst (sizetype,
+							     shl));
+	}
+
+      tree masked = gimple_assign_lhs (pattern_stmt);
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt, vectype);
+      pattern_stmt
+	= gimple_build_assign (vect_recog_temp_ssa_var (container_type),
+			       RSHIFT_EXPR, masked,
+			       build_int_cst (sizetype, shift_n));
+      result = gimple_assign_lhs (pattern_stmt);
+    }
+
+  if (!useless_type_conversion_p (TREE_TYPE (result), ret_type))
+    {
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt, vectype);
+      pattern_stmt
+	= gimple_build_assign (vect_recog_temp_ssa_var (ret_type),
+			       NOP_EXPR, result);
+    }
+
+  if (!lhs)
+    {
+      if (!vectype)
+	return NULL;
+
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt, vectype);
+      vectype = truth_type_for (vectype);
+
+      /* FIXME: This part extracts the boolean value out of the bitfield in the
+		same way as vect_recog_gcond_pattern does.  However because
+		patterns cannot match the same root twice,  when we handle and
+		lower the bitfield in the gcond, vect_recog_gcond_pattern can't
+		apply anymore.  We should really fix it so that we don't need to
+		duplicate transformations like these.  */
+      tree new_lhs = vect_recog_temp_ssa_var (boolean_type_node, NULL);
+      gcond *cond_stmt = dyn_cast <gcond *> (stmt_info->stmt);
+      tree cond_cst = gimple_cond_rhs (cond_stmt);
+      gimple *new_stmt
+	= gimple_build_assign (new_lhs, gimple_cond_code (cond_stmt),
+			       gimple_get_lhs (pattern_stmt),
+			       fold_convert (container_type, cond_cst));
+      append_pattern_def_seq (vinfo, stmt_info, new_stmt, vectype, container_type);
+      pattern_stmt
+	= gimple_build_cond (NE_EXPR, new_lhs,
+			     build_zero_cst (TREE_TYPE (new_lhs)),
+			     NULL_TREE, NULL_TREE);
+    }
+
+  *type_out = STMT_VINFO_VECTYPE (stmt_info);
+  vect_pattern_detected ("bitfield_ref pattern", stmt_info->stmt);
+
+  return pattern_stmt;
+}
+
+/* Function vect_recog_bit_insert_pattern
+
+   Try to find the following pattern:
+
+   written = BIT_INSERT_EXPR (container, value, bitpos);
+
+   Input:
+
+   * STMT_VINFO: The stmt we want to replace.
+
+   Output:
+
+   * TYPE_OUT: The vector type of the output of this pattern.
+
+   * Return value: A new stmt that will be used to replace the sequence of
+   stmts that constitute the pattern. In this case it will be:
+   value = (container_type) value;	    // Make sure
+   shifted = value << bitpos;		    // Shift value into place
+   masked = shifted & (mask << bitpos);	    // Mask off the non-relevant bits in
+					    // the 'to-write value'.
+   cleared = container & ~(mask << bitpos); // Clearing the bits we want to
+					    // write to from the value we want
+					    // to write to.
+   written = cleared | masked;		    // Write bits.
+
+
+   where mask = ((1 << TYPE_PRECISION (value)) - 1), a mask to keep the number of
+   bits corresponding to the real size of the bitfield value we are writing to.
+   The shifting is always optional depending on whether bitpos != 0.
+
+*/
+
+static gimple *
+vect_recog_bit_insert_pattern (vec_info *vinfo, stmt_vec_info stmt_info,
+			       tree *type_out)
+{
+  gassign *bf_stmt = dyn_cast <gassign *> (stmt_info->stmt);
+  if (!bf_stmt || gimple_assign_rhs_code (bf_stmt) != BIT_INSERT_EXPR)
+    return NULL;
+
+  tree container = gimple_assign_rhs1 (bf_stmt);
+  tree value = gimple_assign_rhs2 (bf_stmt);
+  tree shift = gimple_assign_rhs3 (bf_stmt);
+
+  tree bf_type = TREE_TYPE (value);
+  tree container_type = TREE_TYPE (container);
+
+  if (!INTEGRAL_TYPE_P (container_type)
+      || !tree_fits_uhwi_p (TYPE_SIZE (container_type)))
+    return NULL;
+
+  gimple *pattern_stmt;
+
+  vect_unpromoted_value unprom;
+  unprom.set_op (value, vect_internal_def);
+  value = vect_convert_input (vinfo, stmt_info, container_type, &unprom,
+			      get_vectype_for_scalar_type (vinfo,
+							   container_type));
+
+  unsigned HOST_WIDE_INT mask_width = TYPE_PRECISION (bf_type);
+  unsigned HOST_WIDE_INT prec = tree_to_uhwi (TYPE_SIZE (container_type));
+  unsigned HOST_WIDE_INT shift_n = tree_to_uhwi (shift);
+  if (BYTES_BIG_ENDIAN)
+    {
+      shift_n = prec - shift_n - mask_width;
+      shift = build_int_cst (TREE_TYPE (shift), shift_n);
+    }
+
+  if (!useless_type_conversion_p (TREE_TYPE (value), container_type))
+    {
+      pattern_stmt =
+	gimple_build_assign (vect_recog_temp_ssa_var (container_type),
+			     NOP_EXPR, value);
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt);
+      value = gimple_get_lhs (pattern_stmt);
+    }
+
+  /* Shift VALUE into place.  */
+  tree shifted = value;
+  if (shift_n)
+    {
+      gimple_seq stmts = NULL;
+      shifted
+	= gimple_build (&stmts, LSHIFT_EXPR, container_type, value, shift);
+      if (!gimple_seq_empty_p (stmts))
+	append_pattern_def_seq (vinfo, stmt_info,
+				gimple_seq_first_stmt (stmts));
+    }
+
+  tree mask_t
+    = wide_int_to_tree (container_type,
+			wi::shifted_mask (shift_n, mask_width, false, prec));
+
+  /* Clear bits we don't want to write back from SHIFTED.  */
+  gimple_seq stmts = NULL;
+  tree masked = gimple_build (&stmts, BIT_AND_EXPR, container_type, shifted,
+			      mask_t);
+  if (!gimple_seq_empty_p (stmts))
+    {
+      pattern_stmt = gimple_seq_first_stmt (stmts);
+      append_pattern_def_seq (vinfo, stmt_info, pattern_stmt);
+    }
+
+  /* Mask off the bits in the container that we are to write to.  */
+  mask_t = wide_int_to_tree (container_type,
+			     wi::shifted_mask (shift_n, mask_width, true, prec));
+  tree cleared = vect_recog_temp_ssa_var (container_type);
+  pattern_stmt = gimple_build_assign (cleared, BIT_AND_EXPR, container, mask_t);
+  append_pattern_def_seq (vinfo, stmt_info, pattern_stmt);
+
+  /* Write MASKED into CLEARED.  */
+  pattern_stmt
+    = gimple_build_assign (vect_recog_temp_ssa_var (container_type),
+			   BIT_IOR_EXPR, cleared, masked);
+
+  *type_out = STMT_VINFO_VECTYPE (stmt_info);
+  vect_pattern_detected ("bit_insert pattern", stmt_info->stmt);
+
+  return pattern_stmt;
+}
+
 
 /* Recognize cases in which an operation is performed in one type WTYPE
    but could be done more efficiently in a narrower type NTYPE.  For example,
@@ -4323,6 +4714,78 @@ integer_type_for_mask (tree var, vec_info *vinfo)
   return build_nonstandard_integer_type (def_stmt_info->mask_precision, 1);
 }
 
+/* Function vect_recog_gcond_pattern
+
+   Try to find pattern like following:
+
+     if (a op b)
+
+   where operator 'op' is not != and convert it to an adjusted boolean pattern
+
+     mask = a op b
+     if (mask != 0)
+
+   and set the mask type on MASK.
+
+   Input:
+
+   * STMT_VINFO: The stmt at the end from which the pattern
+		 search begins, i.e. cast of a bool to
+		 an integer type.
+
+   Output:
+
+   * TYPE_OUT: The type of the output of this pattern.
+
+   * Return value: A new stmt that will be used to replace the pattern.  */
+
+static gimple *
+vect_recog_gcond_pattern (vec_info *vinfo,
+			 stmt_vec_info stmt_vinfo, tree *type_out)
+{
+  /* Currently we only support this for loop vectorization and when multiple
+     exits.  */
+  loop_vec_info loop_vinfo = dyn_cast <loop_vec_info> (vinfo);
+  if (!loop_vinfo || !LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return NULL;
+
+  gimple *last_stmt = STMT_VINFO_STMT (stmt_vinfo);
+  gcond* cond = NULL;
+  if (!(cond = dyn_cast <gcond *> (last_stmt)))
+    return NULL;
+
+  auto lhs = gimple_cond_lhs (cond);
+  auto rhs = gimple_cond_rhs (cond);
+  auto code = gimple_cond_code (cond);
+
+  tree scalar_type = TREE_TYPE (lhs);
+  if (VECTOR_TYPE_P (scalar_type))
+    return NULL;
+
+  if (code == NE_EXPR
+      && zerop (rhs)
+      && VECT_SCALAR_BOOLEAN_TYPE_P (scalar_type))
+    return NULL;
+
+  tree vecitype = get_vectype_for_scalar_type (vinfo, scalar_type);
+  if (vecitype == NULL_TREE)
+    return NULL;
+
+  tree vectype = truth_type_for (vecitype);
+
+  tree new_lhs = vect_recog_temp_ssa_var (boolean_type_node, NULL);
+  gimple *new_stmt = gimple_build_assign (new_lhs, code, lhs, rhs);
+  append_pattern_def_seq (vinfo, stmt_vinfo, new_stmt, vectype, scalar_type);
+
+  gimple *pattern_stmt
+    = gimple_build_cond (NE_EXPR, new_lhs,
+			 build_int_cst (TREE_TYPE (new_lhs), 0),
+			 NULL_TREE, NULL_TREE);
+  *type_out = vectype;
+  vect_pattern_detected ("vect_recog_gcond_pattern", last_stmt);
+  return pattern_stmt;
+}
+
 /* Function vect_recog_bool_pattern
 
    Try to find pattern like following:
@@ -5400,15 +5863,26 @@ static bool
 possible_vector_mask_operation_p (stmt_vec_info stmt_info)
 {
   tree lhs = gimple_get_lhs (stmt_info->stmt);
+  tree_code code = ERROR_MARK;
+  gassign *assign = NULL;
+  gcond *cond = NULL;
+
+  if ((assign = dyn_cast <gassign *> (stmt_info->stmt)))
+    code = gimple_assign_rhs_code (assign);
+  else if ((cond = dyn_cast <gcond *> (stmt_info->stmt)))
+    {
+      lhs = gimple_cond_lhs (cond);
+      code = gimple_cond_code (cond);
+    }
+
   if (!lhs
       || TREE_CODE (lhs) != SSA_NAME
       || !VECT_SCALAR_BOOLEAN_TYPE_P (TREE_TYPE (lhs)))
     return false;
 
-  if (gassign *assign = dyn_cast <gassign *> (stmt_info->stmt))
+  if (code != ERROR_MARK)
     {
-      tree_code rhs_code = gimple_assign_rhs_code (assign);
-      switch (rhs_code)
+      switch (code)
 	{
 	CASE_CONVERT:
 	case SSA_NAME:
@@ -5419,7 +5893,7 @@ possible_vector_mask_operation_p (stmt_vec_info stmt_info)
 	  return true;
 
 	default:
-	  return TREE_CODE_CLASS (rhs_code) == tcc_comparison;
+	  return TREE_CODE_CLASS (code) == tcc_comparison;
 	}
     }
   else if (is_a <gphi *> (stmt_info->stmt))
@@ -5466,12 +5940,35 @@ vect_determine_mask_precision (vec_info *vinfo, stmt_vec_info stmt_info)
      The number of operations are equal, but M16 would have given
      a shorter dependency chain and allowed more ILP.  */
   unsigned int precision = ~0U;
-  if (gassign *assign = dyn_cast <gassign *> (stmt_info->stmt))
+  gimple *stmt = STMT_VINFO_STMT (stmt_info);
+
+  /* If the statement compares two values that shouldn't use vector masks,
+     try comparing the values as normal scalars instead.  */
+  tree_code code = ERROR_MARK;
+  tree op0_type;
+  unsigned int nops = -1;
+  unsigned int ops_start = 0;
+
+  if (gassign *assign = dyn_cast <gassign *> (stmt))
     {
-      unsigned int nops = gimple_num_ops (assign);
-      for (unsigned int i = 1; i < nops; ++i)
+      code = gimple_assign_rhs_code (assign);
+      op0_type = TREE_TYPE (gimple_assign_rhs1 (assign));
+      nops = gimple_num_ops (assign);
+      ops_start = 1;
+    }
+  else if (gcond *cond = dyn_cast <gcond *> (stmt))
+    {
+      code = gimple_cond_code (cond);
+      op0_type = TREE_TYPE (gimple_cond_lhs (cond));
+      nops = 2;
+      ops_start = 0;
+    }
+
+  if (code != ERROR_MARK)
+    {
+      for (unsigned int i = ops_start; i < nops; ++i)
 	{
-	  tree rhs = gimple_op (assign, i);
+	  tree rhs = gimple_op (stmt, i);
 	  if (!VECT_SCALAR_BOOLEAN_TYPE_P (TREE_TYPE (rhs)))
 	    continue;
 
@@ -5488,19 +5985,15 @@ vect_determine_mask_precision (vec_info *vinfo, stmt_vec_info stmt_info)
 	    }
 	}
 
-      /* If the statement compares two values that shouldn't use vector masks,
-	 try comparing the values as normal scalars instead.  */
-      tree_code rhs_code = gimple_assign_rhs_code (assign);
       if (precision == ~0U
-	  && TREE_CODE_CLASS (rhs_code) == tcc_comparison)
+	  && TREE_CODE_CLASS (code) == tcc_comparison)
 	{
-	  tree rhs1_type = TREE_TYPE (gimple_assign_rhs1 (assign));
 	  scalar_mode mode;
 	  tree vectype, mask_type;
-	  if (is_a <scalar_mode> (TYPE_MODE (rhs1_type), &mode)
-	      && (vectype = get_vectype_for_scalar_type (vinfo, rhs1_type))
-	      && (mask_type = get_mask_type_for_scalar_type (vinfo, rhs1_type))
-	      && expand_vec_cmp_expr_p (vectype, mask_type, rhs_code))
+	  if (is_a <scalar_mode> (TYPE_MODE (op0_type), &mode)
+	      && (vectype = get_vectype_for_scalar_type (vinfo, op0_type))
+	      && (mask_type = get_mask_type_for_scalar_type (vinfo, op0_type))
+	      && expand_vec_cmp_expr_p (vectype, mask_type, code))
 	    precision = GET_MODE_BITSIZE (mode);
 	}
     }
@@ -5675,6 +6168,7 @@ static vect_recog_func vect_vect_recog_func_ptrs[] = {
   { vect_recog_divmod_pattern, "divmod" },
   { vect_recog_mult_pattern, "mult" },
   { vect_recog_mixed_size_cond_pattern, "mixed_size_cond" },
+  { vect_recog_gcond_pattern, "gcond" },
   { vect_recog_bool_pattern, "bool" },
   /* This must come before mask conversion, and includes the parts
      of mask conversion that are needed for gather and scatter
@@ -5759,6 +6253,10 @@ vect_mark_pattern_stmts (vec_info *vinfo,
   else
     vect_set_pattern_stmt (vinfo,
 			   pattern_stmt, orig_stmt_info, pattern_vectype);
+
+  /* For any conditionals mark them as vect_condition_def.  */
+  if (is_a <gcond *> (pattern_stmt))
+    STMT_VINFO_DEF_TYPE (STMT_VINFO_RELATED_STMT (orig_stmt_info)) = vect_condition_def;
 
   /* Transfer reduction path info to the pattern.  */
   if (STMT_VINFO_REDUC_IDX (orig_stmt_info_saved) != -1)
