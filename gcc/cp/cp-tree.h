@@ -7303,8 +7303,8 @@ extern tree clone_attrs				(tree);
 extern bool maybe_clone_body			(tree);
 
 /* In parser.cc */
-extern tree cp_convert_range_for (tree, tree, tree, tree, unsigned int, bool,
-				  unsigned short);
+extern tree cp_convert_range_for (tree, tree, tree, cp_decomp *, bool,
+				  tree, bool);
 extern void cp_convert_omp_range_for (tree &, vec<tree, va_gc> *, tree &,
 				      tree &, tree &, tree &, tree &, tree &);
 extern void cp_finish_omp_range_for (tree, tree);
@@ -7627,17 +7627,18 @@ extern void begin_else_clause			(tree);
 extern void finish_else_clause			(tree);
 extern void finish_if_stmt			(tree);
 extern tree begin_while_stmt			(void);
-extern void finish_while_stmt_cond	(tree, tree, bool, unsigned short);
+extern void finish_while_stmt_cond	(tree, tree, bool, tree, bool);
 extern void finish_while_stmt			(tree);
 extern tree begin_do_stmt			(void);
 extern void finish_do_body			(tree);
-extern void finish_do_stmt		(tree, tree, bool, unsigned short);
+extern void finish_do_stmt		(tree, tree, bool, tree, bool);
 extern tree finish_return_stmt			(tree);
 extern tree begin_for_scope			(tree *);
 extern tree begin_for_stmt			(tree, tree);
 extern void finish_init_stmt			(tree);
-extern void finish_for_cond		(tree, tree, bool, unsigned short);
+extern void finish_for_cond		(tree, tree, bool, tree, bool);
 extern void finish_for_expr			(tree, tree);
+extern void find_range_for_decls		(tree[3]);
 extern void finish_for_stmt			(tree);
 extern tree begin_range_for_stmt		(tree, tree);
 extern void finish_range_for_decl		(tree, tree, tree);
@@ -7835,6 +7836,8 @@ extern tree lambda_regenerating_args		(tree);
 extern tree most_general_lambda			(tree);
 extern tree finish_omp_target			(location_t, tree, tree, bool);
 extern void finish_omp_target_clauses		(location_t, tree, tree *);
+extern void maybe_warn_unparenthesized_assignment (tree, bool, tsubst_flags_t);
+extern tree cp_check_pragma_unroll		(location_t, tree);
 
 /* in tree.cc */
 extern int cp_tree_operand_length		(const_tree);

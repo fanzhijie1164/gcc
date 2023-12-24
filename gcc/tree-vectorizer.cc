@@ -1061,7 +1061,8 @@ try_vectorize_loop_1 (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
 		 LOCATION_LINE (vect_location.get_location_t ()));
 
   /* Try to analyze the loop, retaining an opt_problem if dump_enabled_p.  */
-  opt_loop_vec_info loop_vinfo = vect_analyze_loop (loop, &shared);
+  opt_loop_vec_info loop_vinfo = vect_analyze_loop (loop, loop_vectorized_call,
+						    &shared);
   loop->aux = loop_vinfo;
 
   if (!loop_vinfo)
@@ -1379,7 +1380,9 @@ pass_vectorize::execute (function *fun)
 	 predicates that need to be shared for optimal predicate usage.
 	 However reassoc will re-order them and prevent CSE from working
 	 as it should.  CSE only the loop body, not the entry.  */
-      bitmap_set_bit (exit_bbs, single_exit (loop)->dest->index);
+      auto_vec<edge> exits = get_loop_exit_edges (loop);
+      for (edge exit : exits)
+	bitmap_set_bit (exit_bbs, exit->dest->index);
 
       edge entry = EDGE_PRED (loop_preheader_edge (loop)->src, 0);
       do_rpo_vn (fun, entry, exit_bbs);

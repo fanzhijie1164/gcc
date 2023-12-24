@@ -3171,7 +3171,7 @@ bool
 loop_distribution::check_loop_vectorizable (loop_p loop)
 {
   vec_info_shared shared;
-  vect_analyze_loop (loop, &shared, true);
+  vect_analyze_loop (loop, loop_vectorized_call, &shared);
   loop_vec_info vinfo = loop_vec_info_for_loop (loop);
   reset_gimple_uid (loop);
   if (vinfo == NULL)

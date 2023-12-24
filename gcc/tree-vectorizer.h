@@ -66,6 +66,7 @@ enum vect_def_type {
   vect_double_reduction_def,
   vect_nested_cycle,
   vect_first_order_recurrence,
+  vect_condition_def,
   vect_unknown_def_type
 };
 
@@ -899,6 +900,16 @@ public:
      we need to peel off iterations at the end to form an epilogue loop.  */
   bool peeling_for_niter;
 
+  /* When the loop has early breaks that we can vectorize we need to peel
+     the loop for the break finding loop.  */
+  bool early_breaks;
+
+  /* List of loop additional IV conditionals found in the loop.  */
+  auto_vec<gcond *> conds;
+
+  /* Main loop IV cond.  */
+  gcond* loop_iv_cond;
+
   /* True if there are no loop carried data dependencies in the loop.
      If loop->safelen <= 1, then this is always true, either the loop
      didn't have any loop carried data dependencies, or the loop is being
@@ -936,6 +947,38 @@ public:
      analysis.  */
   vec<_loop_vec_info *> epilogue_vinfos;
 
+  /* If this is an epilogue loop the DR advancement applied.  */
+  tree drs_advanced_by;
+
+  /* The controlling loop IV for the current loop when vectorizing.  This IV
+     controls the natural exits of the loop.  */
+  edge vec_loop_iv_exit;
+
+  /* The controlling loop IV for the epilogue loop when vectorizing.  This IV
+     controls the natural exits of the loop.  */
+  edge vec_epilogue_loop_iv_exit;
+
+  /* The controlling loop IV for the scalar loop being vectorized.  This IV
+     controls the natural exits of the loop.  */
+  edge scalar_loop_iv_exit;
+
+  /* Used to store the list of stores needing to be moved if doing early
+     break vectorization as they would violate the scalar loop semantics if
+     vectorized in their current location.  These are stored in order that they
+     need to be moved.  */
+  auto_vec<gimple *> early_break_stores;
+
+  /* The final basic block where to move statements to.  In the case of
+     multiple exits this could be pretty far away.  */
+  basic_block early_break_dest_bb;
+
+  /* Statements whose VUSES need updating if early break vectorization is to
+     happen.  */
+  auto_vec<gimple*> early_break_vuses;
+
+  /* Record statements that are needed to be live for early break vectorization
+     but may not have an LC PHI node materialized yet in the exits.  */
+  auto_vec<stmt_vec_info> early_break_live_ivs;
 } *loop_vec_info;
 
 /* Access Functions.  */
@@ -989,6 +1032,16 @@ public:
 #define LOOP_VINFO_REDUCTION_CHAINS(L)     (L)->reduction_chains
 #define LOOP_VINFO_PEELING_FOR_GAPS(L)     (L)->peeling_for_gaps
 #define LOOP_VINFO_PEELING_FOR_NITER(L)    (L)->peeling_for_niter
+#define LOOP_VINFO_EARLY_BREAKS(L)         (L)->early_breaks
+#define LOOP_VINFO_EARLY_BRK_STORES(L)     (L)->early_break_stores
+#define LOOP_VINFO_EARLY_BREAKS_VECT_PEELED(L)  \
+  (single_pred ((L)->loop->latch) != (L)->vec_loop_iv_exit->src)
+#define LOOP_VINFO_EARLY_BREAKS_LIVE_IVS(L)  \
+  (L)->early_break_live_ivs
+#define LOOP_VINFO_EARLY_BRK_DEST_BB(L)    (L)->early_break_dest_bb
+#define LOOP_VINFO_EARLY_BRK_VUSES(L)      (L)->early_break_vuses
+#define LOOP_VINFO_LOOP_CONDS(L)           (L)->conds
+#define LOOP_VINFO_LOOP_IV_COND(L)         (L)->loop_iv_cond
 #define LOOP_VINFO_NO_DATA_DEPENDENCIES(L) (L)->no_data_dependencies
 #define LOOP_VINFO_SCALAR_LOOP(L)	   (L)->scalar_loop
 #define LOOP_VINFO_SCALAR_LOOP_SCALING(L)  (L)->scalar_loop_scaling
@@ -1812,11 +1865,25 @@ vect_orig_stmt (stmt_vec_info stmt_info)
 inline stmt_vec_info
 get_later_stmt (stmt_vec_info stmt1_info, stmt_vec_info stmt2_info)
 {
-  if (gimple_uid (vect_orig_stmt (stmt1_info)->stmt)
-      > gimple_uid (vect_orig_stmt (stmt2_info)->stmt))
+  gimple *stmt1 = vect_orig_stmt (stmt1_info)->stmt;
+  gimple *stmt2 = vect_orig_stmt (stmt2_info)->stmt;
+  if (gimple_bb (stmt1) == gimple_bb (stmt2))
+    {
+      if (gimple_uid (stmt1) > gimple_uid (stmt2))
+	return stmt1_info;
+      else
+	return stmt2_info;
+    }
+  /* ???  We should be really calling this function only with stmts
+     in the same BB but we can recover if there's a domination
+     relationship between them.  */
+  else if (dominated_by_p (CDI_DOMINATORS,
+			   gimple_bb (stmt1), gimple_bb (stmt2)))
     return stmt1_info;
-  else
+  else if (dominated_by_p (CDI_DOMINATORS,
+			   gimple_bb (stmt2), gimple_bb (stmt1)))
     return stmt2_info;
+  gcc_unreachable ();
 }
 
 /* If STMT_INFO has been replaced by a pattern statement, return the
@@ -1837,7 +1904,7 @@ is_loop_header_bb_p (basic_block bb)
 {
   if (bb == (bb->loop_father)->header)
     return true;
-  gcc_checking_assert (EDGE_COUNT (bb->preds) == 1);
+
   return false;
 }
 
@@ -2235,9 +2302,12 @@ class auto_purge_vect_location
    in tree-vect-loop-manip.cc.  */
 extern void vect_set_loop_condition (class loop *, loop_vec_info,
 				     tree, tree, tree, bool);
-extern bool slpeel_can_duplicate_loop_p (const class loop *, const_edge);
-class loop *slpeel_tree_duplicate_loop_to_edge_cfg (class loop *,
-						     class loop *, edge);
+extern bool slpeel_can_duplicate_loop_p (const class loop *, const_edge,
+					 const_edge);
+class loop *slpeel_tree_duplicate_loop_to_edge_cfg (class loop *, edge,
+						    class loop *, edge,
+						    edge, edge *, bool = true,
+						    vec<basic_block> * = NULL);
 class loop *vect_loop_versioning (loop_vec_info, gimple *);
 class loop *vect_loop_versioning_2 (loop_vec_info, gimple *);
 extern class loop *vect_do_peeling (loop_vec_info, tree, tree,
@@ -2248,6 +2318,8 @@ extern void vect_prepare_for_masked_peels (loop_vec_info);
 extern dump_user_location_t find_loop_location (class loop *);
 extern bool vect_can_advance_ivs_p (loop_vec_info);
 extern void vect_update_inits_of_drs (loop_vec_info, tree, tree_code);
+extern edge vec_init_loop_exit_info (class loop *);
+extern void vect_iv_increment_position (edge, gimple_stmt_iterator *, bool *);
 
 /* In tree-vect-stmts.cc.  */
 extern tree get_related_vectype_for_scalar_type (machine_mode, tree,
@@ -2268,10 +2340,10 @@ extern bool vect_is_simple_use (vec_info *, stmt_vec_info, slp_tree,
 				enum vect_def_type *,
 				tree *, stmt_vec_info * = NULL);
 extern bool vect_maybe_update_slp_op_vectype (slp_tree, tree);
-extern bool supportable_widening_operation (vec_info*, code_helper,
-					    stmt_vec_info, tree, tree,
-					    code_helper*, code_helper*,
-					    int*, vec<tree> *);
+extern tree perm_mask_for_reverse (tree);
+extern bool supportable_widening_operation (code_helper, tree, tree, bool,
+                                            code_helper*, code_helper*,
+                                            int*, vec<tree> *);
 extern bool supportable_narrowing_operation (code_helper, tree, tree,
 					     code_helper *, int *,
 					     vec<tree> *);
@@ -2345,6 +2417,9 @@ extern opt_result vect_get_vector_types_for_stmt (vec_info *,
 						  tree *, unsigned int = 0);
 extern opt_tree vect_get_mask_type_for_stmt (stmt_vec_info, unsigned int = 0);
 
+/* In tree-if-conv.cc.  */
+extern bool ref_within_array_bound (gimple *, tree);
+
 /* In tree-vect-data-refs.cc.  */
 extern bool vect_can_force_dr_alignment_p (const_tree, poly_uint64);
 extern enum dr_alignment_support vect_supportable_dr_alignment
@@ -2412,8 +2487,8 @@ extern bool check_reduction_path (dump_user_location_t, loop_p, gphi *, tree,
 				  enum tree_code);
 extern bool needs_fold_left_reduction_p (tree, code_helper);
 /* Drive for loop analysis stage.  */
-extern opt_loop_vec_info vect_analyze_loop (class loop *, vec_info_shared *,
-					    bool result_only_p = false);
+extern opt_loop_vec_info vect_analyze_loop (class loop *, gimple *,
+					    vec_info_shared *);
 extern tree vect_build_loop_niters (loop_vec_info, bool * = NULL);
 extern void vect_gen_vector_loop_niters (loop_vec_info, tree, tree *,
 					 tree *, bool);
@@ -2443,7 +2518,8 @@ struct vect_loop_form_info
   gcond *loop_cond;
   gcond *inner_loop_cond;
 };
-extern opt_result vect_analyze_loop_form (class loop *, vect_loop_form_info *);
+extern opt_result vect_analyze_loop_form (class loop *, gimple *,
+					  vect_loop_form_info *);
 extern loop_vec_info vect_create_loop_vinfo (class loop *, vec_info_shared *,
 					     const vect_loop_form_info *,
 					     loop_vec_info = nullptr);
