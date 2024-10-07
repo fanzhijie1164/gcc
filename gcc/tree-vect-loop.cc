@@ -1342,7 +1342,8 @@ vect_compute_single_scalar_iteration_cost (loop_vec_info loop_vinfo)
      niter could be analyzed under some assumptions.  */
 
 opt_result
-vect_analyze_loop_form (class loop *loop, vect_loop_form_info *info)
+vect_analyze_loop_form (class loop *loop, gimple *loop_vectorized_call,
+			vect_loop_form_info *info)
 {
   DUMP_VECT_SCOPE ("vect_analyze_loop_form");
 
@@ -1352,6 +1353,18 @@ vect_analyze_loop_form (class loop *loop, vect_loop_form_info *info)
 				   "not vectorized:"
 				   " could not determine main exit from"
 				   " loop with multiple exits.\n");
+  if (loop_vectorized_call)
+    {
+      tree arg = gimple_call_arg (loop_vectorized_call, 1);
+      class loop *scalar_loop = get_loop (cfun, tree_to_shwi (arg));
+      edge scalar_exit_e = vec_init_loop_exit_info (scalar_loop);
+      if (!scalar_exit_e)
+	return opt_result::failure_at (vect_location,
+				       "not vectorized:"
+				       " could not determine main exit from"
+				       " loop with multiple exits.\n");
+    }
+
   info->loop_exit = exit_e;
   if (dump_enabled_p ())
       dump_printf_loc (MSG_NOTE, vect_location,
@@ -1429,7 +1442,7 @@ vect_analyze_loop_form (class loop *loop, vect_loop_form_info *info)
 
       /* Analyze the inner-loop.  */
       vect_loop_form_info inner;
-      opt_result res = vect_analyze_loop_form (loop->inner, &inner);
+      opt_result res = vect_analyze_loop_form (loop->inner, NULL, &inner);
       if (!res)
 	{
 	  if (dump_enabled_p ())
@@ -2981,7 +2994,8 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
    for it.  The different analyses will record information in the
    loop_vec_info struct.  */
 opt_loop_vec_info
-vect_analyze_loop (class loop *loop, vec_info_shared *shared)
+vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
+		   vec_info_shared *shared)
 {
   DUMP_VECT_SCOPE ("analyze_loop_nest");
 
@@ -2999,7 +3013,8 @@ vect_analyze_loop (class loop *loop, vec_info_shared *shared)
 
   /* Analyze the loop form.  */
   vect_loop_form_info loop_form_info;
-  opt_result res = vect_analyze_loop_form (loop, &loop_form_info);
+  opt_result res = vect_analyze_loop_form (loop, loop_vectorized_call,
+					   &loop_form_info);
   if (!res)
     {
       if (dump_enabled_p ())
