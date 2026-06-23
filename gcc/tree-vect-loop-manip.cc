@@ -1298,24 +1298,31 @@ slpeel_add_loop_guard (basic_block guard_bb, tree cond,
 bool
 slpeel_can_duplicate_loop_p (const class loop *loop, const_edge e)
 {
-  edge exit_e = single_exit (loop);
+  const_edge exit_e = single_exit (loop);
   edge entry_e = loop_preheader_edge (loop);
-  gcond *orig_cond = get_loop_exit_condition (loop);
+  if (!exit_e)
+    exit_e = e;
+  if (!exit_e)
+    return false;
+  gcond *orig_cond = get_loop_exit_condition (exit_e);
   gimple_stmt_iterator loop_exit_gsi = gsi_last_bb (exit_e->src);
   unsigned int num_bb = loop->inner? 5 : 2;
 
   /* All loops have an outer scope; the only case loop->outer is NULL is for
      the function itself.  */
   if (!loop_outer (loop)
-      || loop->num_nodes != num_bb
+      || (single_exit (loop) && loop->num_nodes != num_bb)
       || !empty_block_p (loop->latch)
-      || !single_exit (loop)
       /* Verify that new loop exit condition can be trivially modified.  */
       || (!orig_cond || orig_cond != gsi_stmt (loop_exit_gsi))
       || (e != exit_e && e != entry_e))
     return false;
 
-  return true;
+  basic_block *bbs = XNEWVEC (basic_block, loop->num_nodes);
+  get_loop_body_with_size (loop, bbs, loop->num_nodes);
+  bool ret = can_copy_bbs_p (bbs, loop->num_nodes);
+  free (bbs);
+  return ret;
 }
 
 /* If the loop has a virtual PHI, but exit bb doesn't, create a virtual PHI

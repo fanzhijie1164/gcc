@@ -325,6 +325,7 @@ is_simple_and_all_uses_invariant (stmt_vec_info stmt_info,
    - it has uses outside the loop.
    - it has vdefs (it alters memory).
    - control stmts in the loop (except for the exit condition).
+   - it is an induction and we have multiple exits.
 
    CHECKME: what other side effects would the vectorizer allow?  */
 
@@ -342,8 +343,10 @@ vect_stmt_relevant_p (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
   *live_p = false;
 
   /* cond stmt other than loop exit cond.  */
-  if (is_ctrl_stmt (stmt_info->stmt)
-      && STMT_VINFO_TYPE (stmt_info) != loop_exit_ctrl_vec_info_type)
+  gimple *stmt = STMT_VINFO_STMT (stmt_info);
+  if (is_ctrl_stmt (stmt)
+      && LOOP_VINFO_LOOP_IV_COND (loop_vinfo) != stmt
+      && (!loop->inner || gimple_bb (stmt)->loop_father == loop))
     *relevant = vect_used_in_scope;
 
   /* changing memory.  */
@@ -373,13 +376,29 @@ vect_stmt_relevant_p (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
                                  "vec_stmt_relevant_p: used out of loop.\n");
 
 	      /* We expect all such uses to be in the loop exit phis
-		 (because of loop closed form)   */
+			 (because of loop closed form)   */
 	      gcc_assert (gimple_code (USE_STMT (use_p)) == GIMPLE_PHI);
-	      gcc_assert (bb == single_exit (loop)->dest);
 
-              *live_p = true;
+	      *live_p = true;
 	    }
 	}
+    }
+
+  /* Check if it's a not live PHI and multiple exits.  In this case there will
+     be a usage later on after peeling which is needed for the alternate exit.  */
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && is_a <gphi *> (stmt)
+      && gimple_bb (stmt) == LOOP_VINFO_LOOP (loop_vinfo)->header
+      && ((! VECTORIZABLE_CYCLE_DEF (STMT_VINFO_DEF_TYPE (stmt_info))
+	   && ! *live_p)
+	  || STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def))
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vec_stmt_relevant_p: PHI forced live for "
+			 "early break.\n");
+      LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo).safe_push (stmt_info);
+      *live_p = true;
     }
 
   if (*live_p && *relevant == vect_unused_in_scope
@@ -11189,9 +11208,10 @@ vect_analyze_stmt (vec_info *vinfo,
 	return res;
    }
 
-  switch (STMT_VINFO_DEF_TYPE (stmt_info))
+ switch (STMT_VINFO_DEF_TYPE (stmt_info))
     {
       case vect_internal_def:
+      case vect_condition_def:
         break;
 
       case vect_reduction_def:
@@ -11263,7 +11283,8 @@ vect_analyze_stmt (vec_info *vinfo,
 	  || vectorizable_comparison (vinfo, stmt_info, NULL, NULL, node,
 				      cost_vec)
 	  || vectorizable_lc_phi (as_a <loop_vec_info> (vinfo),
-				  stmt_info, NULL, node));
+				  stmt_info, NULL, node)
+	  || STMT_VINFO_DEF_TYPE (stmt_info) == vect_condition_def);
   else
     {
       if (bb_vinfo)
@@ -11286,7 +11307,8 @@ vect_analyze_stmt (vec_info *vinfo,
 					 NULL, NULL, node, cost_vec)
 	      || vectorizable_comparison (vinfo, stmt_info, NULL, NULL, node,
 					  cost_vec)
-	      || vectorizable_phi (vinfo, stmt_info, NULL, node, cost_vec));
+	      || vectorizable_phi (vinfo, stmt_info, NULL, node, cost_vec)
+	      || STMT_VINFO_DEF_TYPE (stmt_info) == vect_condition_def);
     }
 
   if (node)
@@ -11822,6 +11844,9 @@ vect_is_simple_use (tree operand, vec_info *vinfo, enum vect_def_type *dt,
 	  break;
 	case vect_nested_cycle:
 	  dump_printf (MSG_NOTE, "nested cycle\n");
+	  break;
+	case vect_condition_def:
+	  dump_printf (MSG_NOTE, "condition\n");
 	  break;
 	case vect_unknown_def_type:
 	  dump_printf (MSG_NOTE, "unknown\n");
@@ -12487,6 +12512,8 @@ vect_get_vector_types_for_stmt (vec_info *vinfo, stmt_vec_info stmt_info,
   *nunits_vectype_out = NULL_TREE;
 
   if (gimple_get_lhs (stmt) == NULL_TREE
+      /* Allow vector conditionals through here.  */
+      && !is_a <gcond *> (stmt)
       /* MASK_STORE has no lhs, but is ok.  */
       && !gimple_call_internal_p (stmt, IFN_MASK_STORE))
     {
@@ -12532,6 +12559,8 @@ vect_get_vector_types_for_stmt (vec_info *vinfo, stmt_vec_info stmt_info,
 	scalar_type = TREE_TYPE (DR_REF (dr));
       else if (gimple_call_internal_p (stmt, IFN_MASK_STORE))
 	scalar_type = TREE_TYPE (gimple_call_arg (stmt, 3));
+      else if (gcond *cond = dyn_cast <gcond *> (stmt))
+	scalar_type = TREE_TYPE (gimple_cond_lhs (cond));
       else
 	scalar_type = TREE_TYPE (gimple_get_lhs (stmt));
 
@@ -12635,4 +12664,3 @@ vect_gen_len (tree len, tree start_index, tree end_index, tree len_limit)
 
   return stmts;
 }
-
