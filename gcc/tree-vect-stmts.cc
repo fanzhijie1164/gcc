@@ -384,23 +384,6 @@ vect_stmt_relevant_p (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
 	}
     }
 
-  /* Check if it's a not live PHI and multiple exits.  In this case there will
-     be a usage later on after peeling which is needed for the alternate exit.  */
-  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
-      && is_a <gphi *> (stmt)
-      && gimple_bb (stmt) == LOOP_VINFO_LOOP (loop_vinfo)->header
-      && ((! VECTORIZABLE_CYCLE_DEF (STMT_VINFO_DEF_TYPE (stmt_info))
-	   && ! *live_p)
-	  || STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def))
-    {
-      if (dump_enabled_p ())
-	dump_printf_loc (MSG_NOTE, vect_location,
-			 "vec_stmt_relevant_p: PHI forced live for "
-			 "early break.\n");
-      LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo).safe_push (stmt_info);
-      *live_p = true;
-    }
-
   if (*live_p && *relevant == vect_unused_in_scope
       && !is_simple_and_all_uses_invariant (stmt_info, loop_vinfo))
     {
@@ -11086,6 +11069,34 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 
   tree op0 = gimple_cond_lhs (cond);
   tree op1 = gimple_cond_rhs (cond);
+  basic_block cond_bb = gimple_bb (cond);
+  edge true_edge;
+  edge false_edge;
+  extract_true_false_edges_from_block (cond_bb, &true_edge, &false_edge);
+  bool true_edge_exits_loop
+    = !flow_bb_inside_loop_p (LOOP_VINFO_LOOP (loop_vinfo), true_edge->dest);
+  bool false_edge_exits_loop
+    = !flow_bb_inside_loop_p (LOOP_VINFO_LOOP (loop_vinfo), false_edge->dest);
+
+  if (true_edge == LOOP_VINFO_IV_EXIT (loop_vinfo))
+    true_edge_exits_loop = false;
+  if (false_edge == LOOP_VINFO_IV_EXIT (loop_vinfo))
+    false_edge_exits_loop = false;
+
+  if (true_edge_exits_loop == false_edge_exits_loop)
+    return false;
+
+  bool early_exit_on_true = true_edge_exits_loop;
+  enum tree_code cmp_code = code;
+  enum tree_code branch_code = NE_EXPR;
+  if (!early_exit_on_true)
+    {
+      cmp_code = invert_tree_comparison (code, HONOR_NANS (op0));
+      if (cmp_code == ERROR_MARK)
+	return false;
+      branch_code = EQ_EXPR;
+    }
+
   tree vectype0 = NULL_TREE, vectype1 = NULL_TREE;
   enum vect_def_type dt0, dt1;
   if (!vect_is_simple_use (op0, vinfo, &dt0, &vectype0)
@@ -11105,7 +11116,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
   int ncopies = vect_get_num_copies (loop_vinfo, vectype);
   if (!vec_stmt)
     {
-      if (!expand_vec_cmp_expr_p (vectype, mask_type, code))
+      if (!expand_vec_cmp_expr_p (vectype, mask_type, cmp_code))
 	return false;
       if (direct_optab_handler (cbranch_optab, TYPE_MODE (mask_type))
 	  == CODE_FOR_nothing)
@@ -11131,7 +11142,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
   for (int i = 0; i < ncopies; ++i)
     {
       tree cmp = make_temp_ssa_name (mask_type, NULL, "vexit");
-      gimple *cmp_stmt = gimple_build_assign (cmp, code,
+      gimple *cmp_stmt = gimple_build_assign (cmp, cmp_code,
 					      vec_oprnds0[i], vec_oprnds1[i]);
       vect_finish_stmt_generation (vinfo, stmt_info, cmp_stmt, &cond_gsi);
       if (!combined)
@@ -11147,7 +11158,8 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
     }
 
   gcc_assert (combined);
-  gimple_cond_set_condition (cond, NE_EXPR, combined, build_zero_cst (mask_type));
+  gimple_cond_set_condition (cond, branch_code, combined,
+			     build_zero_cst (mask_type));
   update_stmt (cond);
   *vec_stmt = NULL;
   return true;

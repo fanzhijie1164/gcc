@@ -9773,6 +9773,180 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
   epilogue_vinfo->shared->save_datarefs ();
 }
 
+/* If COND is a find-like condition based on loading through an induction
+   pointer, return that pointer.  */
+
+static tree
+vect_find_like_cond_ptr_iv (gcond *cond)
+{
+  auto find_load_ptr = [] (tree op) -> tree
+    {
+      if (TREE_CODE (op) != SSA_NAME)
+	return NULL_TREE;
+
+      gimple *def = SSA_NAME_DEF_STMT (op);
+      if (!is_gimple_assign (def)
+	  || !gimple_assign_single_p (def))
+	return NULL_TREE;
+
+      tree rhs = gimple_assign_rhs1 (def);
+      while (handled_component_p (rhs))
+	rhs = TREE_OPERAND (rhs, 0);
+
+      tree ptr = NULL_TREE;
+      if (TREE_CODE (rhs) == MEM_REF)
+	ptr = TREE_OPERAND (rhs, 0);
+      else if (TREE_CODE (rhs) == INDIRECT_REF)
+	ptr = TREE_OPERAND (rhs, 0);
+
+      if (ptr
+	  && TREE_CODE (ptr) == SSA_NAME
+	  && POINTER_TYPE_P (TREE_TYPE (ptr)))
+	return ptr;
+
+      return NULL_TREE;
+    };
+
+  for (unsigned int i = 0; i < 2; ++i)
+    if (tree ptr = find_load_ptr (i == 0 ? gimple_cond_lhs (cond)
+				 : gimple_cond_rhs (cond)))
+      return ptr;
+
+  for (gimple_stmt_iterator gsi = gsi_start_bb (gimple_bb (cond));
+       !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gimple *stmt = gsi_stmt (gsi);
+      if (stmt == cond)
+	break;
+      tree lhs = gimple_get_lhs (stmt);
+      if (lhs)
+	if (tree ptr = find_load_ptr (lhs))
+	  return ptr;
+    }
+
+  return NULL_TREE;
+}
+
+/* GCC 12 does not have the full GCC 15 scalar fallback machinery for
+   early-break loops.  For the narrow find-like pointer loop support added here,
+   make vector any-match exits enter the scalar epilogue at the current vector
+   chunk start, so the scalar code locates the first matching lane.  Also repair
+   scalar find-like exit PHIs that were copied from the vector exit.  */
+
+static void
+vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
+{
+  if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return;
+
+  class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+  class loop *scalar_loop = LOOP_VINFO_SCALAR_LOOP (loop_vinfo);
+  basic_block scalar_header = scalar_loop ? scalar_loop->header : NULL;
+
+  if (!scalar_header)
+    {
+      basic_block iv_exit_bb = LOOP_VINFO_IV_EXIT (loop_vinfo)->dest;
+      basic_block bb;
+      FOR_EACH_BB_FN (bb, cfun)
+	{
+	  if (flow_bb_inside_loop_p (loop, bb)
+	      || !dominated_by_p (CDI_DOMINATORS, bb, iv_exit_bb))
+	    continue;
+
+	  gimple *last = last_stmt (bb);
+	  if (!last)
+	    continue;
+	  gcond *cond = dyn_cast <gcond *> (last);
+	  if (!cond || !vect_find_like_cond_ptr_iv (cond))
+	    continue;
+
+	  for (gphi_iterator psi = gsi_start_phis (bb);
+	       !gsi_end_p (psi); gsi_next (&psi))
+	    {
+	      gphi *phi = psi.phi ();
+	      if (POINTER_TYPE_P (TREE_TYPE (gimple_phi_result (phi))))
+		{
+		  scalar_header = bb;
+		  break;
+		}
+	    }
+	  if (scalar_header)
+	    break;
+	}
+    }
+
+  if (!scalar_header)
+    return;
+
+  gphi *scalar_phi = NULL;
+  for (gphi_iterator psi = gsi_start_phis (scalar_header);
+       !gsi_end_p (psi); gsi_next (&psi))
+    {
+      gphi *phi = psi.phi ();
+      if (POINTER_TYPE_P (TREE_TYPE (gimple_phi_result (phi))))
+	{
+	  scalar_phi = phi;
+	  break;
+	}
+    }
+  if (!scalar_phi)
+    return;
+
+  basic_block bb;
+  FOR_EACH_BB_FN (bb, cfun)
+    {
+      gimple *last = last_stmt (bb);
+      if (!last)
+	continue;
+      gcond *cond = dyn_cast <gcond *> (last);
+      if (!cond)
+	continue;
+
+      tree ptr = vect_find_like_cond_ptr_iv (cond);
+      if (!ptr)
+	continue;
+
+      edge e;
+      edge_iterator ei;
+      FOR_EACH_EDGE (e, ei, bb->succs)
+	{
+	  if (e == LOOP_VINFO_IV_EXIT (loop_vinfo))
+	    continue;
+
+	  if (flow_bb_inside_loop_p (loop, bb)
+	      && !flow_bb_inside_loop_p (loop, e->dest))
+	    {
+	      if (!useless_type_conversion_p (TREE_TYPE (gimple_phi_result
+							(scalar_phi)),
+					      TREE_TYPE (ptr)))
+		continue;
+
+	      redirect_edge_and_branch_force (e, scalar_header);
+	      add_phi_arg (scalar_phi, ptr, e, UNKNOWN_LOCATION);
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "redirect find-like early break to scalar "
+				 "fallback: %G", cond);
+	    }
+	  else if (!flow_bb_inside_loop_p (loop, bb)
+		   && (!scalar_loop
+		       || !flow_bb_inside_loop_p (scalar_loop, e->dest)))
+	    {
+	      for (gphi_iterator gsi = gsi_start_phis (e->dest);
+		   !gsi_end_p (gsi); gsi_next (&gsi))
+		{
+		  gphi *phi = gsi.phi ();
+		  tree res = gimple_phi_result (phi);
+		  if (POINTER_TYPE_P (TREE_TYPE (res))
+		      && useless_type_conversion_p (TREE_TYPE (res),
+						    TREE_TYPE (ptr)))
+		    SET_USE (PHI_ARG_DEF_PTR_FROM_EDGE (phi, e), ptr);
+		}
+	    }
+	}
+    }
+}
+
 /* Function vect_transform_loop.
 
    The analysis phase has determined that the loop is vectorizable.
@@ -10158,6 +10332,8 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 			  assumed_vf) - 1
 	 : wi::udiv_floor (loop->nb_iterations_estimate + bias_for_assumed,
 			   assumed_vf) - 1);
+
+  vect_fixup_find_like_early_break_fallback (loop_vinfo);
 
   if (dump_enabled_p ())
     {
