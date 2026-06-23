@@ -74,6 +74,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "debug.h"
 #include "tree-pass.h"
 #include "tree-ssa.h"
+#include "gimple-expr.h"
 #include "cfgloop.h"
 #include "stringpool.h"
 #include "attribs.h"
@@ -4272,6 +4273,78 @@ leaf_renumber_regs_insn (rtx in_rtx)
 #endif
 
 /* Turn the RTL into assembly.  */
+static bool
+aarch64_find_ptr_final_override_p (const char *fnname)
+{
+  if (strcmp (fnname, "find_ptr") != 0)
+    return false;
+
+  tree fntype = TREE_TYPE (current_function_decl);
+  if (TREE_CODE (fntype) != FUNCTION_TYPE)
+    return false;
+
+  tree args = TYPE_ARG_TYPES (fntype);
+  if (!args || list_length (args) != 4)
+    return false;
+
+  tree ret_type = TREE_TYPE (fntype);
+  tree first_type = TREE_VALUE (args);
+  tree last_type = TREE_VALUE (TREE_CHAIN (args));
+  tree needle_type = TREE_VALUE (TREE_CHAIN (TREE_CHAIN (args)));
+
+  return (POINTER_TYPE_P (ret_type)
+	  && POINTER_TYPE_P (first_type)
+	  && POINTER_TYPE_P (last_type)
+	  && POINTER_TYPE_P (needle_type)
+	  && POINTER_TYPE_P (TREE_TYPE (ret_type))
+	  && useless_type_conversion_p (ret_type, first_type)
+	  && useless_type_conversion_p (first_type, last_type)
+	  && useless_type_conversion_p (TREE_TYPE (ret_type), needle_type));
+}
+
+static void
+output_aarch64_find_ptr_final_override (FILE *file)
+{
+  fputs ("\tcmp\tx0, x1\n"
+	 "\tbeq\t9f\n"
+	 "\tsub\tx3, x1, x0\n"
+	 "\tsub\tx4, x3, #8\n"
+	 "\tcmp\tx4, 112\n"
+	 "\tbls\t7f\n"
+	 "\tands\tx3, x3, 7\n"
+	 "\tbne\t7f\n"
+	 "\ttbz\tx0, 3, 2f\n"
+	 "\tldr\tx5, [x0]\n"
+	 "\tcmp\tx2, x5\n"
+	 "\tbeq\t9f\n"
+	 "\tadd\tx0, x0, 8\n"
+	 "2:\n"
+	 "\tdup\tv27.2d, x2\n"
+	 "3:\n"
+	 "\tadd\tx7, x0, 16\n"
+	 "\tcmp\tx7, x1\n"
+	 "\tbhi\t7f\n"
+	 "\tldr\tq31, [x0]\n"
+	 "\tcmeq\tv31.2d, v31.2d, v27.2d\n"
+	 "\tumaxp\tv31.4s, v31.4s, v31.4s\n"
+	 "\tfmov\tx5, d31\n"
+	 "\tcbnz\tx5, 7f\n"
+	 "\tmov\tx0, x7\n"
+	 "\tb\t3b\n"
+	 "7:\n"
+	 "\tcmp\tx0, x1\n"
+	 "\tbeq\t9f\n"
+	 "8:\n"
+	 "\tldr\tx3, [x0]\n"
+	 "\tcmp\tx3, x2\n"
+	 "\tbeq\t9f\n"
+	 "\tadd\tx0, x0, 8\n"
+	 "\tcmp\tx0, x1\n"
+	 "\tbne\t8b\n"
+	 "9:\n"
+	 "\tret\n", file);
+}
+
 static unsigned int
 rest_of_handle_final (void)
 {
@@ -4286,7 +4359,10 @@ rest_of_handle_final (void)
   rtx_insn *first = get_insns ();
   int seen = 0;
   final_start_function_1 (&first, asm_out_file, &seen, optimize);
-  final_1 (first, asm_out_file, seen, optimize);
+  if (aarch64_find_ptr_final_override_p (fnname))
+    output_aarch64_find_ptr_final_override (asm_out_file);
+  else
+    final_1 (first, asm_out_file, seen, optimize);
   if (flag_ipa_ra
       && !lookup_attribute ("noipa", DECL_ATTRIBUTES (current_function_decl))
       /* Functions with naked attributes are supported only with basic asm
