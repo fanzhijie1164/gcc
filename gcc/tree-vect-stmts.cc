@@ -11064,6 +11064,95 @@ vectorizable_comparison (vec_info *vinfo,
   return true;
 }
 
+/* Check and transform an early-break loop exit condition.  */
+
+bool
+vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
+			 gimple_stmt_iterator *, gimple **vec_stmt,
+			 slp_tree slp_node, stmt_vector_for_cost *cost_vec)
+{
+  loop_vec_info loop_vinfo = dyn_cast <loop_vec_info> (vinfo);
+  gcond *cond = dyn_cast <gcond *> (STMT_VINFO_STMT (stmt_info));
+  if (!loop_vinfo || !cond || slp_node)
+    return false;
+
+  if (STMT_VINFO_DEF_TYPE (stmt_info) != vect_condition_def
+      || !STMT_VINFO_RELEVANT_P (stmt_info))
+    return false;
+
+  enum tree_code code = gimple_cond_code (cond);
+  if (TREE_CODE_CLASS (code) != tcc_comparison)
+    return false;
+
+  tree op0 = gimple_cond_lhs (cond);
+  tree op1 = gimple_cond_rhs (cond);
+  tree vectype0 = NULL_TREE, vectype1 = NULL_TREE;
+  enum vect_def_type dt0, dt1;
+  if (!vect_is_simple_use (op0, vinfo, &dt0, &vectype0)
+      || !vect_is_simple_use (op1, vinfo, &dt1, &vectype1))
+    return false;
+
+  tree vectype = vectype0 ? vectype0 : vectype1;
+  if (!vectype)
+    vectype = get_vectype_for_scalar_type (vinfo, TREE_TYPE (op0));
+  if (!vectype)
+    return false;
+
+  tree mask_type = truth_type_for (vectype);
+  if (!mask_type || !VECTOR_BOOLEAN_TYPE_P (mask_type))
+    return false;
+
+  int ncopies = vect_get_num_copies (loop_vinfo, vectype);
+  if (!vec_stmt)
+    {
+      if (!expand_vec_cmp_expr_p (vectype, mask_type, code))
+	return false;
+      if (direct_optab_handler (cbranch_optab, TYPE_MODE (mask_type))
+	  == CODE_FOR_nothing)
+	return false;
+      if (ncopies > 1
+	  && direct_optab_handler (ior_optab, TYPE_MODE (mask_type))
+	     == CODE_FOR_nothing)
+	return false;
+
+      enum vect_def_type dts[2] = { dt0, dt1 };
+      vect_model_simple_cost (vinfo, stmt_info, ncopies, dts, 2, NULL,
+			      cost_vec);
+      return true;
+    }
+
+  auto_vec<tree> vec_oprnds0;
+  auto_vec<tree> vec_oprnds1;
+  vect_get_vec_defs (vinfo, stmt_info, NULL, ncopies, op0, &vec_oprnds0,
+		     vectype, op1, &vec_oprnds1, vectype);
+
+  gimple_stmt_iterator cond_gsi = gsi_last_bb (gimple_bb (cond));
+  tree combined = NULL_TREE;
+  for (int i = 0; i < ncopies; ++i)
+    {
+      tree cmp = make_temp_ssa_name (mask_type, NULL, "vexit");
+      gimple *cmp_stmt = gimple_build_assign (cmp, code,
+					      vec_oprnds0[i], vec_oprnds1[i]);
+      vect_finish_stmt_generation (vinfo, stmt_info, cmp_stmt, &cond_gsi);
+      if (!combined)
+	combined = cmp;
+      else
+	{
+	  tree tmp = make_temp_ssa_name (mask_type, NULL, "vexit_reduc");
+	  gimple *ior_stmt = gimple_build_assign (tmp, BIT_IOR_EXPR,
+						  combined, cmp);
+	  vect_finish_stmt_generation (vinfo, stmt_info, ior_stmt, &cond_gsi);
+	  combined = tmp;
+	}
+    }
+
+  gcc_assert (combined);
+  gimple_cond_set_condition (cond, NE_EXPR, combined, build_zero_cst (mask_type));
+  update_stmt (cond);
+  *vec_stmt = NULL;
+  return true;
+}
+
 /* If SLP_NODE is nonnull, return true if vectorizable_live_operation
    can handle all live statements in the node.  Otherwise return true
    if STMT_INFO is not live or if vectorizable_live_operation can handle it.
@@ -11457,6 +11546,12 @@ vect_transform_stmt (vec_info *vinfo,
 
     case phi_info_type:
       done = vectorizable_phi (vinfo, stmt_info, &vec_stmt, slp_node, NULL);
+      gcc_assert (done);
+      break;
+
+    case loop_exit_ctrl_vec_info_type:
+      done = vectorizable_early_exit (vinfo, stmt_info, gsi, &vec_stmt,
+				      slp_node, NULL);
       gcc_assert (done);
       break;
 

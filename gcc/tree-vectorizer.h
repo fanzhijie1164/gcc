@@ -2140,7 +2140,7 @@ class auto_purge_vect_location
 
 /* Simple loop peeling and versioning utilities for vectorizer's purposes -
    in tree-vect-loop-manip.cc.  */
-extern void vect_set_loop_condition (class loop *, loop_vec_info,
+extern void vect_set_loop_condition (class loop *, edge, loop_vec_info,
 				     tree, tree, tree, bool);
 extern bool slpeel_can_duplicate_loop_p (const class loop *, const_edge);
 class loop *slpeel_tree_duplicate_loop_to_edge_cfg (class loop *,
@@ -2373,6 +2373,9 @@ extern bool vectorizable_lc_phi (loop_vec_info, stmt_vec_info,
 				 gimple **, slp_tree);
 extern bool vectorizable_phi (vec_info *, stmt_vec_info, gimple **, slp_tree,
 			      stmt_vector_for_cost *);
+extern bool vectorizable_early_exit (vec_info *, stmt_vec_info,
+				     gimple_stmt_iterator *, gimple **,
+				     slp_tree, stmt_vector_for_cost *);
 extern bool vect_emulated_vector_p (tree);
 extern bool vect_can_vectorize_without_simd_p (tree_code);
 extern bool vect_can_vectorize_without_simd_p (code_helper);

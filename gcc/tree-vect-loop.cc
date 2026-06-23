@@ -2721,14 +2721,14 @@ start_over:
 
   /* If an epilogue loop is required make sure we can create one.  */
   if (LOOP_VINFO_PEELING_FOR_GAPS (loop_vinfo)
-      || LOOP_VINFO_PEELING_FOR_NITER (loop_vinfo))
+      || LOOP_VINFO_PEELING_FOR_NITER (loop_vinfo)
+      || LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
     {
       if (dump_enabled_p ())
         dump_printf_loc (MSG_NOTE, vect_location, "epilog loop required\n");
       if (!vect_can_advance_ivs_p (loop_vinfo)
 	  || !slpeel_can_duplicate_loop_p (LOOP_VINFO_LOOP (loop_vinfo),
-					   single_exit (LOOP_VINFO_LOOP
-							 (loop_vinfo))))
+					   LOOP_VINFO_IV_EXIT (loop_vinfo)))
         {
 	  ok = opt_result::failure_at (vect_location,
 				       "not vectorized: can't create required "
@@ -9054,12 +9054,15 @@ vectorizable_live_operation (vec_info *vinfo,
 	   lhs' = new_tree;  */
 
       class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
-      basic_block exit_bb = single_exit (loop)->dest;
-      gcc_assert (single_pred_p (exit_bb));
+      edge exit_e = LOOP_VINFO_IV_EXIT (loop_vinfo);
+      basic_block exit_bb = exit_e->dest;
+      gcc_assert (single_pred_p (exit_bb)
+		  || LOOP_VINFO_EARLY_BREAKS (loop_vinfo));
 
       tree vec_lhs_phi = copy_ssa_name (vec_lhs);
       gimple *phi = create_phi_node (vec_lhs_phi, exit_bb);
-      SET_PHI_ARG_DEF (phi, single_exit (loop)->dest_idx, vec_lhs);
+      for (unsigned i = 0; i < gimple_phi_num_args (phi); i++)
+	SET_PHI_ARG_DEF (phi, i, vec_lhs);
 
       gimple_seq stmts = NULL;
       tree new_tree;
@@ -9480,7 +9483,7 @@ vect_get_loop_len (loop_vec_info loop_vinfo, vec_loop_lens *lens,
    by factor VF.  */
 
 static void
-scale_profile_for_vect_loop (class loop *loop, unsigned vf)
+scale_profile_for_vect_loop (class loop *loop, edge exit_e, unsigned vf)
 {
   edge preheader = loop_preheader_edge (loop);
   /* Reduce loop iterations by the vectorization factor.  */
@@ -9499,9 +9502,8 @@ scale_profile_for_vect_loop (class loop *loop, unsigned vf)
       scale_loop_frequencies (loop, p);
     }
 
-  edge exit_e = single_exit (loop);
   exit_e->probability = profile_probability::always ()
-				 .apply_scale (1, new_est_niter + 1);
+					 .apply_scale (1, new_est_niter + 1);
 
   edge exit_l = single_pred_edge (loop->latch);
   profile_probability prob = exit_l->probability;
@@ -9816,8 +9818,8 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 
   /* Make sure there exists a single-predecessor exit bb.  Do this before 
      versioning.   */
-  edge e = single_exit (loop);
-  if (! single_pred_p (e->dest))
+  edge e = LOOP_VINFO_IV_EXIT (loop_vinfo);
+  if (! single_pred_p (e->dest) && !LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
     {
       split_loop_exit_edge (e, true);
       if (dump_enabled_p ())
@@ -9842,7 +9844,7 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
      loop closed PHI nodes on the exit.  */
   if (LOOP_VINFO_SCALAR_LOOP (loop_vinfo))
     {
-      e = single_exit (LOOP_VINFO_SCALAR_LOOP (loop_vinfo));
+      e = LOOP_VINFO_SCALAR_IV_EXIT (loop_vinfo);
       if (! single_pred_p (e->dest))
 	{
 	  split_loop_exit_edge (e, true);
@@ -10079,11 +10081,13 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
      a zero NITERS becomes a nonzero NITERS_VECTOR.  */
   if (integer_onep (step_vector))
     niters_no_overflow = true;
-  vect_set_loop_condition (loop, loop_vinfo, niters_vector, step_vector,
-			   niters_vector_mult_vf, !niters_no_overflow);
+  vect_set_loop_condition (loop, LOOP_VINFO_IV_EXIT (loop_vinfo), loop_vinfo,
+			   niters_vector, step_vector, niters_vector_mult_vf,
+			   !niters_no_overflow);
 
   unsigned int assumed_vf = vect_vf_for_cost (loop_vinfo);
-  scale_profile_for_vect_loop (loop, assumed_vf);
+  scale_profile_for_vect_loop (loop, LOOP_VINFO_IV_EXIT (loop_vinfo),
+			       assumed_vf);
 
   /* True if the final iteration might not handle a full vector's
      worth of scalar iterations.  */
