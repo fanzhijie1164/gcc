@@ -9777,7 +9777,7 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
    pointer, return that pointer.  */
 
 static tree
-vect_find_like_cond_ptr_iv (gcond *cond)
+vect_find_like_cond_ptr_iv (gcond *cond, bool scan_defs = true)
 {
   auto find_load_ptr = [] (tree op) -> tree
     {
@@ -9801,7 +9801,9 @@ vect_find_like_cond_ptr_iv (gcond *cond)
 
       if (ptr
 	  && TREE_CODE (ptr) == SSA_NAME
-	  && POINTER_TYPE_P (TREE_TYPE (ptr)))
+	  && POINTER_TYPE_P (TREE_TYPE (ptr))
+	  && useless_type_conversion_p (TREE_TYPE (TREE_TYPE (ptr)),
+					TREE_TYPE (rhs)))
 	return ptr;
 
       return NULL_TREE;
@@ -9811,6 +9813,9 @@ vect_find_like_cond_ptr_iv (gcond *cond)
     if (tree ptr = find_load_ptr (i == 0 ? gimple_cond_lhs (cond)
 				 : gimple_cond_rhs (cond)))
       return ptr;
+
+  if (!scan_defs)
+    return NULL_TREE;
 
   for (gimple_stmt_iterator gsi = gsi_start_bb (gimple_bb (cond));
        !gsi_end_p (gsi); gsi_next (&gsi))
@@ -9822,6 +9827,33 @@ vect_find_like_cond_ptr_iv (gcond *cond)
       if (lhs)
 	if (tree ptr = find_load_ptr (lhs))
 	  return ptr;
+    }
+
+  return NULL_TREE;
+}
+
+/* If COND compares an incremented pointer against the range end, return the
+   incremented pointer SSA name.  This is the scalar fallback's "next lane"
+   candidate after a find-like load did not match.  */
+
+static tree
+vect_find_like_cond_ptr_next (gcond *cond)
+{
+  for (unsigned int i = 0; i < 2; ++i)
+    {
+      tree op = i == 0 ? gimple_cond_lhs (cond) : gimple_cond_rhs (cond);
+      if (TREE_CODE (op) != SSA_NAME || !POINTER_TYPE_P (TREE_TYPE (op)))
+	continue;
+
+      gimple *def = SSA_NAME_DEF_STMT (op);
+      if (!is_gimple_assign (def)
+	  || gimple_assign_rhs_code (def) != POINTER_PLUS_EXPR)
+	continue;
+
+      tree base = gimple_assign_rhs1 (def);
+      if (TREE_CODE (base) == SSA_NAME
+	  && useless_type_conversion_p (TREE_TYPE (op), TREE_TYPE (base)))
+	return op;
     }
 
   return NULL_TREE;
@@ -9903,8 +9935,6 @@ vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
 	continue;
 
       tree ptr = vect_find_like_cond_ptr_iv (cond);
-      if (!ptr)
-	continue;
 
       edge e;
       edge_iterator ei;
@@ -9916,6 +9946,9 @@ vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
 	  if (flow_bb_inside_loop_p (loop, bb)
 	      && !flow_bb_inside_loop_p (loop, e->dest))
 	    {
+	      if (!ptr)
+		continue;
+
 	      if (!useless_type_conversion_p (TREE_TYPE (gimple_phi_result
 							(scalar_phi)),
 					      TREE_TYPE (ptr)))
@@ -9932,6 +9965,12 @@ vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
 		   && (!scalar_loop
 		       || !flow_bb_inside_loop_p (scalar_loop, e->dest)))
 	    {
+	      tree scalar_ptr = vect_find_like_cond_ptr_iv (cond, false);
+	      if (!scalar_ptr)
+		scalar_ptr = vect_find_like_cond_ptr_next (cond);
+	      if (!scalar_ptr)
+		continue;
+
 	      for (gphi_iterator gsi = gsi_start_phis (e->dest);
 		   !gsi_end_p (gsi); gsi_next (&gsi))
 		{
@@ -9939,8 +9978,9 @@ vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
 		  tree res = gimple_phi_result (phi);
 		  if (POINTER_TYPE_P (TREE_TYPE (res))
 		      && useless_type_conversion_p (TREE_TYPE (res),
-						    TREE_TYPE (ptr)))
-		    SET_USE (PHI_ARG_DEF_PTR_FROM_EDGE (phi, e), ptr);
+						    TREE_TYPE (scalar_ptr)))
+		    SET_USE (PHI_ARG_DEF_PTR_FROM_EDGE (phi, e),
+			     scalar_ptr);
 		}
 	    }
 	}
