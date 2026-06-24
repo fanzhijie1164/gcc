@@ -18615,6 +18615,29 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
   tree stmt, tmp;
   tree r;
   location_t loc;
+  auto extract_loop_annotations = [] (tree *cond, bool *ivdep,
+				      unsigned short *unroll)
+    {
+      while (*cond && TREE_CODE (*cond) == ANNOTATE_EXPR)
+	{
+	  tree kind = TREE_OPERAND (*cond, 1);
+	  tree value = TREE_OPERAND (*cond, 2);
+	  if (TREE_CODE (kind) == INTEGER_CST)
+	    switch ((annot_expr_kind) tree_to_shwi (kind))
+	      {
+	      case annot_expr_ivdep_kind:
+		*ivdep = true;
+		break;
+	      case annot_expr_unroll_kind:
+		if (tree_fits_uhwi_p (value))
+		  *unroll = (unsigned short) tree_to_uhwi (value);
+		break;
+	      default:
+		break;
+	      }
+	  *cond = TREE_OPERAND (*cond, 0);
+	}
+    };
 
   if (t == NULL_TREE || t == error_mark_node)
     return t;
@@ -18843,7 +18866,12 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
       RECUR (FOR_INIT_STMT (t));
       finish_init_stmt (stmt);
       tmp = RECUR (FOR_COND (t));
-      finish_for_cond (tmp, stmt, false, 0);
+      {
+	bool ivdep = false;
+	unsigned short unroll = 0;
+	extract_loop_annotations (&tmp, &ivdep, &unroll);
+	finish_for_cond (tmp, stmt, ivdep, unroll);
+      }
       tmp = RECUR (FOR_EXPR (t));
       finish_for_expr (tmp, stmt);
       {
@@ -18903,7 +18931,12 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
     case WHILE_STMT:
       stmt = begin_while_stmt ();
       tmp = RECUR (WHILE_COND (t));
-      finish_while_stmt_cond (tmp, stmt, false, 0);
+      {
+	bool ivdep = false;
+	unsigned short unroll = 0;
+	extract_loop_annotations (&tmp, &ivdep, &unroll);
+	finish_while_stmt_cond (tmp, stmt, ivdep, unroll);
+      }
       {
 	bool prev = note_iteration_stmt_body_start ();
 	RECUR (WHILE_BODY (t));
@@ -18921,7 +18954,12 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
       }
       finish_do_body (stmt);
       tmp = RECUR (DO_COND (t));
-      finish_do_stmt (tmp, stmt, false, 0);
+      {
+	bool ivdep = false;
+	unsigned short unroll = 0;
+	extract_loop_annotations (&tmp, &ivdep, &unroll);
+	finish_do_stmt (tmp, stmt, ivdep, unroll);
+      }
       break;
 
     case IF_STMT:
