@@ -2791,6 +2791,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   /* Saving NITERs before the loop, as this may be changed by prologue.  */
   tree before_loop_niters = LOOP_VINFO_NITERS (loop_vinfo);
   edge update_e = NULL, skip_e = NULL;
+  edge epilog_e = NULL, new_epilog_e = NULL;
   unsigned int lowest_vf = constant_lower_bound (vf);
   /* If we know the number of scalar iterations for the main loop we should
      check whether after the main loop there are enough iterations left over
@@ -2968,8 +2969,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 	 vectorizing.  */
       edge scalar_e = LOOP_VINFO_SCALAR_IV_EXIT (loop_vinfo);
       epilog = vect_epilogues ? get_loop_copy (loop) : scalar_loop;
-      edge epilog_e = vect_epilogues ? e : scalar_e;
-      edge new_epilog_e = NULL;
+      epilog_e = vect_epilogues ? e : scalar_e;
       if (vop_to_rename)
 	{
 	  /* Vectorizing the main loop can sometimes introduce a vdef to
@@ -3114,6 +3114,8 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
     {
       epilog->aux = epilogue_vinfo;
       LOOP_VINFO_LOOP (epilogue_vinfo) = epilog;
+      gcc_assert (new_epilog_e);
+      LOOP_VINFO_IV_EXIT (epilogue_vinfo) = new_epilog_e;
 
       loop_constraint_clear (epilog, LOOP_C_INFINITE);
 
