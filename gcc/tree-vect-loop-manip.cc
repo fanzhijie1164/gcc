@@ -1364,6 +1364,9 @@ create_lcssa_for_virtual_phi (class loop *loop)
   gphi_iterator gsi;
   edge exit_e = single_exit (loop);
 
+  if (!exit_e)
+    return NULL_TREE;
+
   for (gsi = gsi_start_phis (loop->header); !gsi_end_p (gsi); gsi_next (&gsi))
     if (virtual_operand_p (gimple_phi_result (gsi_stmt (gsi))))
       {

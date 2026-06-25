@@ -2707,6 +2707,11 @@ start_over:
   if (!ok)
     return ok;
 
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return opt_result::failure_at (vect_location,
+				   "not vectorized: early breaks need "
+				   "unsupported peeling/guard CFG.\n");
+
   /* Check the costings of the loop make vectorizing worthwhile.  */
   res = vect_analyze_loop_costing (loop_vinfo, suggested_unroll_factor);
   if (res < 0)
@@ -3207,11 +3212,7 @@ vect_analyze_loop (class loop *loop, vec_info_shared *shared)
      either already found the loop's SIMDLEN or there was no SIMDLEN to
      begin with.
      TODO: Enable epilogue vectorization for loops with SIMDUID set.  */
-  bool vect_epilogues = (!simdlen
-			 && loop->inner == NULL
-			 && param_vect_epilogues_nomask
-			 && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
-			 && !loop->simduid);
+  bool vect_epilogues = false;
   if (!vect_epilogues)
     return first_loop_vinfo;
 

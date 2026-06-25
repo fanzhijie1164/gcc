@@ -207,6 +207,8 @@ select_best_block (basic_block early_bb,
       /* Walk up the dominator tree, hopefully we'll find a shallower
  	 loop nest.  */
       temp_bb = get_immediate_dominator (CDI_DOMINATORS, temp_bb);
+      if (!temp_bb)
+	return early_bb;
     }
 
   /* If we found a shallower loop nest, then we always consider that
