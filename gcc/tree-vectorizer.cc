@@ -1373,6 +1373,12 @@ pass_vectorize::execute (function *fun)
 
   vect_slp_fini ();
 
+  if (num_vectorized_loops > 0)
+    {
+      free_dominance_info (CDI_DOMINATORS);
+      free_dominance_info (CDI_POST_DOMINATORS);
+    }
+
   return ret;
 }
 
