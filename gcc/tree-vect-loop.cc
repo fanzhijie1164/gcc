@@ -1658,6 +1658,92 @@ vect_create_loop_vinfo (class loop *loop, vec_info_shared *shared,
   return loop_vinfo;
 }
 
+/* Return true if PTR is, or is derived from, a pointer induction PHI in LOOP's
+   header.  */
+
+static bool
+vect_find_like_ptr_iv_p (class loop *loop, tree ptr)
+{
+  if (TREE_CODE (ptr) != SSA_NAME || !POINTER_TYPE_P (TREE_TYPE (ptr)))
+    return false;
+
+  gimple *def = SSA_NAME_DEF_STMT (ptr);
+  if (gphi *phi = dyn_cast <gphi *> (def))
+    return gimple_bb (phi) == loop->header;
+
+  if (!is_gimple_assign (def)
+      || gimple_assign_rhs_code (def) != POINTER_PLUS_EXPR)
+    return false;
+
+  tree base = gimple_assign_rhs1 (def);
+  return (TREE_CODE (base) == SSA_NAME
+	  && useless_type_conversion_p (TREE_TYPE (ptr), TREE_TYPE (base))
+	  && vect_find_like_ptr_iv_p (loop, base));
+}
+
+/* Return true if COND is a find-like early-break condition for a pointer
+   element load through a loop pointer IV.  This is intentionally narrower than
+   the transform-time fallback repair: the GCC 12 backport only has enough CFG
+   support for std::find-style pointer searches, not arbitrary early exits.  */
+
+static bool
+vect_find_like_pointer_early_break_p (class loop *loop, gcond *cond)
+{
+  auto find_load_ptr = [] (tree op) -> tree
+    {
+      if (TREE_CODE (op) != SSA_NAME)
+	return NULL_TREE;
+
+      gimple *def = SSA_NAME_DEF_STMT (op);
+      if (!is_gimple_assign (def)
+	  || !gimple_assign_single_p (def))
+	return NULL_TREE;
+
+      tree rhs = gimple_assign_rhs1 (def);
+      while (handled_component_p (rhs))
+	rhs = TREE_OPERAND (rhs, 0);
+
+      if (!POINTER_TYPE_P (TREE_TYPE (rhs)))
+	return NULL_TREE;
+
+      tree ptr = NULL_TREE;
+      if (TREE_CODE (rhs) == MEM_REF)
+	ptr = TREE_OPERAND (rhs, 0);
+      else if (TREE_CODE (rhs) == INDIRECT_REF)
+	ptr = TREE_OPERAND (rhs, 0);
+
+      if (ptr
+	  && TREE_CODE (ptr) == SSA_NAME
+	  && POINTER_TYPE_P (TREE_TYPE (ptr))
+	  && useless_type_conversion_p (TREE_TYPE (TREE_TYPE (ptr)),
+					TREE_TYPE (rhs)))
+	return ptr;
+
+      return NULL_TREE;
+    };
+
+  for (unsigned int i = 0; i < 2; ++i)
+    if (tree ptr = find_load_ptr (i == 0 ? gimple_cond_lhs (cond)
+				 : gimple_cond_rhs (cond)))
+      return vect_find_like_ptr_iv_p (loop, ptr);
+
+  return false;
+}
+
+/* Return true if LOOP_VINFO is in the narrow find-like early-break subset that
+   this GCC 12 backport can transform safely.  */
+
+static bool
+vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
+{
+  if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      || LOOP_VINFO_LOOP_CONDS (loop_vinfo).length () != 1)
+    return false;
+
+  return vect_find_like_pointer_early_break_p
+	   (LOOP_VINFO_LOOP (loop_vinfo), LOOP_VINFO_LOOP_CONDS (loop_vinfo)[0]);
+}
+
 
 
 /* Scan the loop stmts and dependent on whether there are any (non-)SLP
@@ -2707,10 +2793,11 @@ start_over:
   if (!ok)
     return ok;
 
-  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && !vect_find_like_pointer_early_break_loop_p (loop_vinfo))
     return opt_result::failure_at (vect_location,
-				   "not vectorized: early breaks need "
-				   "unsupported peeling/guard CFG.\n");
+				   "not vectorized: unsupported "
+				   "early-break loop.\n");
 
   /* Check the costings of the loop make vectorizing worthwhile.  */
   res = vect_analyze_loop_costing (loop_vinfo, suggested_unroll_factor);
