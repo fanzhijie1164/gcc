@@ -1737,13 +1737,6 @@ vect_find_like_pointer_early_break_p (class loop *loop, gcond *cond)
 static bool
 vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
 {
-  /* This GCC 12 backport does not have the complete early-break transform
-     safety machinery from newer GCC.  In LTO builds the find-like idiom can be
-     recognized inside wrappers that erase/destroy the found object, where the
-     fallback edge repair below is not sufficient.  Keep these loops scalar
-     until the full transform support is backported.  */
-  return false;
-
   if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
       || LOOP_VINFO_LOOP_CONDS (loop_vinfo).length () != 1)
     return false;
