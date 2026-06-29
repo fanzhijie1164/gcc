@@ -3104,17 +3104,6 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
 		     res ? "succeeded" : " failed",
 		     GET_MODE_NAME (loop_vinfo->vector_mode));
 
-  if (res && LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
-      && suggested_unroll_factor > 1)
-    {
-      if (dump_enabled_p ())
-	dump_printf_loc (MSG_NOTE, vect_location,
-			 "***** Ignoring suggested unroll factor %d for "
-			 "early-break loop.\n",
-			 suggested_unroll_factor);
-      suggested_unroll_factor = 1;
-    }
-
   if (res && !main_loop_vinfo && suggested_unroll_factor > 1)
     {
       if (dump_enabled_p ())
@@ -9973,6 +9962,53 @@ vect_find_like_cond_ptr_next (gcond *cond)
   return NULL_TREE;
 }
 
+/* Return a scalar pointer SSA name for lane 0 of the current vector IV in
+   COND's block.  This gives the scalar fallback the start of the vector
+   chunk that raised the any-match exit, and remains valid if RTL later
+   unrolls the vector loop.  PTR is the scalar pointer type we need.  */
+
+static tree
+vect_find_like_current_vector_iv_ptr (gcond *cond, tree ptr)
+{
+  if (!ptr || !POINTER_TYPE_P (TREE_TYPE (ptr)))
+    return NULL_TREE;
+
+  tree ptr_type = TREE_TYPE (ptr);
+  for (gphi_iterator gsi = gsi_start_phis (gimple_bb (cond));
+       !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gphi *phi = gsi.phi ();
+      tree vec = gimple_phi_result (phi);
+      tree vectype = TREE_TYPE (vec);
+      if (TREE_CODE (vectype) != VECTOR_TYPE)
+	continue;
+
+      tree elem_type = TREE_TYPE (vectype);
+      if (!INTEGRAL_TYPE_P (elem_type)
+	  || TYPE_PRECISION (elem_type) != POINTER_SIZE)
+	continue;
+
+      tree lane = make_ssa_name (elem_type);
+      tree bfr = build3 (BIT_FIELD_REF, elem_type, vec,
+			 bitsize_int (TYPE_PRECISION (elem_type)),
+			 bitsize_zero_node);
+      gassign *stmt = gimple_build_assign (lane, BIT_FIELD_REF, bfr);
+      gimple_stmt_iterator insert_gsi = gsi_for_stmt (cond);
+      gsi_insert_before (&insert_gsi, stmt, GSI_SAME_STMT);
+
+      tree converted = fold_convert (ptr_type, lane);
+      gimple_seq stmts = NULL;
+      tree tmp = create_tmp_var (ptr_type, "find_eb_ptr");
+      tree name = force_gimple_operand (converted, &stmts, true, tmp);
+      if (stmts)
+	gsi_insert_seq_before (&insert_gsi, stmts, GSI_SAME_STMT);
+
+      return name;
+    }
+
+  return NULL_TREE;
+}
+
 /* GCC 12 does not have the full GCC 15 scalar fallback machinery for
    early-break loops.  For the narrow find-like pointer loop support added here,
    make vector any-match exits enter the scalar epilogue at the current vector
@@ -10063,13 +10099,18 @@ vect_fixup_find_like_early_break_fallback (loop_vec_info loop_vinfo)
 	      if (!ptr)
 		continue;
 
+	      tree fallback_ptr
+		= vect_find_like_current_vector_iv_ptr (cond, ptr);
+	      if (!fallback_ptr)
+		fallback_ptr = ptr;
+
 	      if (!useless_type_conversion_p (TREE_TYPE (gimple_phi_result
 							(scalar_phi)),
-					      TREE_TYPE (ptr)))
+					      TREE_TYPE (fallback_ptr)))
 		continue;
 
 	      redirect_edge_and_branch_force (e, scalar_header);
-	      add_phi_arg (scalar_phi, ptr, e, UNKNOWN_LOCATION);
+	      add_phi_arg (scalar_phi, fallback_ptr, e, UNKNOWN_LOCATION);
 	      if (dump_enabled_p ())
 		dump_printf_loc (MSG_NOTE, vect_location,
 				 "redirect find-like early break to scalar "
@@ -10516,13 +10557,6 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 			 " variable-length vectorization factor\n");
     }
 
-  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
-    {
-      loop->unroll = 1;
-      if (dump_enabled_p ())
-	dump_printf_loc (MSG_NOTE, vect_location, "Disabling unrolling for"
-			 " early-break vector loop\n");
-    }
   /* Free SLP instances here because otherwise stmt reference counting
      won't work.  */
   slp_instance instance;
