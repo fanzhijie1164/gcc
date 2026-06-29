@@ -3104,6 +3104,17 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
 		     res ? "succeeded" : " failed",
 		     GET_MODE_NAME (loop_vinfo->vector_mode));
 
+  if (res && LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && suggested_unroll_factor > 1)
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "***** Ignoring suggested unroll factor %d for "
+			 "early-break loop.\n",
+			 suggested_unroll_factor);
+      suggested_unroll_factor = 1;
+    }
+
   if (res && !main_loop_vinfo && suggested_unroll_factor > 1)
     {
       if (dump_enabled_p ())
@@ -10503,6 +10514,14 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
       if (dump_enabled_p ())
 	dump_printf_loc (MSG_NOTE, vect_location, "Disabling unrolling due to"
 			 " variable-length vectorization factor\n");
+    }
+
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    {
+      loop->unroll = 1;
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location, "Disabling unrolling for"
+			 " early-break vector loop\n");
     }
   /* Free SLP instances here because otherwise stmt reference counting
      won't work.  */
