@@ -1741,13 +1741,13 @@ vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
       || LOOP_VINFO_LOOP_CONDS (loop_vinfo).length () != 1)
     return false;
 
-  /* In LTO, inlining can leave the find loop inside a much larger function
-     with EH cleanup regions.  The GCC 12 backport only repairs the local
-     find-like fallback CFG, and running that repair inside LTO EH regions has
-     been observed to corrupt the later vectorizer CFG walk.  Keep non-LTO
-     C++ functions enabled so ordinary bool-returning std::find wrappers still
-     vectorize.  */
-  if (in_lto_p && cfun && cfun->eh && cfun->eh->region_tree)
+  /* In LTO, inlining can leave the find loop inside much larger functions.
+     The GCC 12 backport only repairs the local find-like fallback CFG, and
+     523.xalancbmk_r has shown both link-time CFG corruption in EH functions
+     and run-time miscompares in non-EH LTO functions.  Keep this narrow
+     support to non-LTO compilations, where the original std::find wrappers
+     are still vectorized.  */
+  if (in_lto_p)
     return false;
 
   return vect_find_like_pointer_early_break_p
