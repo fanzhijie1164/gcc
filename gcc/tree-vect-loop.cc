@@ -1741,20 +1741,6 @@ vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
       || LOOP_VINFO_LOOP_CONDS (loop_vinfo).length () != 1)
     return false;
 
-  /* The GCC 12 backport only repairs the straight-line find fallback CFG.
-     Functions with EH cleanups can have extra exceptional regions and landing
-     pads around the scalar fallback, and leaving those for later loop analysis
-     has been observed to corrupt the vectorizer's CFG walk during LTO.  */
-  if (cfun && cfun->eh && cfun->eh->region_tree)
-    return false;
-
-  if (current_function_decl)
-    {
-      tree result_type = TREE_TYPE (TREE_TYPE (current_function_decl));
-      if (result_type && TREE_CODE (result_type) == INTEGER_TYPE)
-	return false;
-    }
-
   return vect_find_like_pointer_early_break_p
 	   (LOOP_VINFO_LOOP (loop_vinfo), LOOP_VINFO_LOOP_CONDS (loop_vinfo)[0]);
 }
