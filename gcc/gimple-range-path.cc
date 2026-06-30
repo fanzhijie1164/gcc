@@ -123,6 +123,9 @@ bool
 path_range_query::defined_outside_path (tree name)
 {
   gimple *def = SSA_NAME_DEF_STMT (name);
+  if (!def)
+    return true;
+
   basic_block bb = gimple_bb (def);
 
   return !bb || !m_path.contains (bb);
@@ -256,6 +259,12 @@ path_range_query::ssa_range_in_phi (vrange &r, gphi *phi)
   basic_block bb = gimple_bb (phi);
   basic_block prev = prev_bb ();
   edge e_in = find_edge (prev, bb);
+  if (!e_in)
+    {
+      r.set_varying (TREE_TYPE (name));
+      return;
+    }
+
   tree arg = PHI_ARG_DEF_FROM_EDGE (phi, e_in);
   // Avoid using the cache for ARGs defined in this block, as
   // that could create an ordering problem.
@@ -287,6 +296,9 @@ bool
 path_range_query::range_defined_in_block (vrange &r, tree name, basic_block bb)
 {
   gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+  if (!def_stmt)
+    return false;
+
   basic_block def_bb = gimple_bb (def_stmt);
 
   if (def_bb != bb)
@@ -386,8 +398,10 @@ path_range_query::compute_ranges_in_block (basic_block bb)
     {
       tree name = ssa_name (i);
       value_range r (TREE_TYPE (name));
+      gimple *def_stmt = SSA_NAME_DEF_STMT (name);
 
-      if (gimple_code (SSA_NAME_DEF_STMT (name)) != GIMPLE_PHI
+      if (def_stmt
+	  && gimple_code (def_stmt) != GIMPLE_PHI
 	  && range_defined_in_block (r, name, bb))
 	m_cache.set_range (name, r);
     }

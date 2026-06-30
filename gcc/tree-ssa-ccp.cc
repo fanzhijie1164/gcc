@@ -284,7 +284,12 @@ get_default_value (tree var)
 
   stmt = SSA_NAME_DEF_STMT (var);
 
-  if (gimple_nop_p (stmt))
+  if (!stmt)
+    {
+      val.lattice_val = VARYING;
+      val.mask = -1;
+    }
+  else if (gimple_nop_p (stmt))
     {
       /* Variables defined by an empty statement are those used
 	 before being initialized.  If VAR is a local variable, we

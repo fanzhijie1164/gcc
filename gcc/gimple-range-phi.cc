@@ -284,7 +284,8 @@ phi_group *
 phi_analyzer::group (tree name) const
 {
   gcc_checking_assert (TREE_CODE (name) == SSA_NAME);
-  if (!is_a<gphi *> (SSA_NAME_DEF_STMT (name)))
+  gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+  if (!def_stmt || !is_a<gphi *> (def_stmt))
     return NULL;
   unsigned v = SSA_NAME_VERSION (name);
   if (v >= m_tab.length ())
@@ -304,7 +305,8 @@ phi_analyzer::operator[] (tree name)
   //  Initial support for irange only.
   if (!irange::supports_p (TREE_TYPE (name)))
     return NULL;
-  if (!is_a<gphi *> (SSA_NAME_DEF_STMT (name)))
+  gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+  if (!def_stmt || !is_a<gphi *> (def_stmt))
     return NULL;
 
   unsigned v = SSA_NAME_VERSION (name);
@@ -314,7 +316,7 @@ phi_analyzer::operator[] (tree name)
 
   if (v >= m_tab.length () || !m_tab[v])
     {
-      process_phi (as_a<gphi *> (SSA_NAME_DEF_STMT (name)));
+      process_phi (as_a<gphi *> (def_stmt));
       if (bitmap_bit_p (m_simple, v))
 	return  NULL;
      // If m_simple bit isn't set, and process_phi didn't allocated the table

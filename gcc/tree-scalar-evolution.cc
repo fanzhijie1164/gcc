@@ -1955,7 +1955,11 @@ analyze_scalar_evolution_1 (class loop *loop, tree var)
     return interpret_expr (loop, NULL, var);
 
   def = SSA_NAME_DEF_STMT (var);
+  if (!def)
+    return chrec_dont_know;
   bb = gimple_bb (def);
+  if (!bb)
+    return chrec_dont_know;
   def_loop = bb->loop_father;
 
   if (!flow_bb_inside_loop_p (loop, bb))

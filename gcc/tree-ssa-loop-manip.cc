@@ -427,7 +427,11 @@ find_uses_to_rename_use (basic_block bb, tree use, bitmap *use_blocks,
     return;
 
   ver = SSA_NAME_VERSION (use);
-  def_bb = gimple_bb (SSA_NAME_DEF_STMT (use));
+  gimple *def_stmt = SSA_NAME_DEF_STMT (use);
+  if (!def_stmt)
+    return;
+
+  def_bb = gimple_bb (def_stmt);
   if (!def_bb)
     return;
   def_loop = def_bb->loop_father;

@@ -245,6 +245,12 @@ select_best_block (basic_block early_bb,
       else if (bb_loop_depth (temp_bb) > bb_loop_depth (best_bb))
 	;
 
+      /* Likewise an irreducible region inside an otherwise same loop
+	 depth.  */
+      else if ((temp_bb->flags & BB_IRREDUCIBLE_LOOP)
+	       && !(best_bb->flags & BB_IRREDUCIBLE_LOOP))
+	;
+
       /* But sink the least distance, if the new candidate on the same
 	 loop depth is post-dominated by the current best block pick
 	 the new candidate.  */
@@ -474,7 +480,10 @@ statement_sink_location (gimple *stmt, basic_block frombb,
 	 operand update, requiring inserting of a PHI node.  */
       || (gimple_vdef (stmt)
 	  && bestbb != sinkbb
-	  && !dominated_by_p (CDI_POST_DOMINATORS, bestbb, sinkbb)))
+	  && !dominated_by_p (CDI_POST_DOMINATORS, bestbb, sinkbb))
+      /* Likewise avoid placing VDEFs into an irreducible region.  */
+      || (gimple_vdef (stmt)
+	  && (bestbb->flags & BB_IRREDUCIBLE_LOOP)))
     return false;
 
   *togsi = gsi_after_labels (bestbb);

@@ -2350,7 +2350,17 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo,
   gphi_iterator gsi, gsi1;
   class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
   basic_block update_bb = update_e->dest;
-  basic_block exit_bb = LOOP_VINFO_IV_EXIT (loop_vinfo)->dest;
+  basic_block exit_bb = update_e->src;
+  /* Check to see if this is an empty loop pre-header block.  If it exists
+     we need to use the edge from that block -> loop header for updates but
+     must use the original exit_bb to add any new adjustment because there
+     can be a skip_epilog edge bypassing the epilog and so the loop pre-header
+     too.  */
+  if (empty_block_p (update_bb) && single_succ_p (update_bb))
+    {
+      update_e = single_succ_edge (update_bb);
+      update_bb = update_e->dest;
+    }
   gimple_stmt_iterator last_gsi = gsi_last_bb (exit_bb);
 
   for (gsi = gsi_start_phis (loop->header), gsi1 = gsi_start_phis (update_bb);
@@ -2432,15 +2442,8 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo,
 	  gsi_insert_seq_before (&last_gsi, new_stmts, GSI_SAME_STMT);
 	}
 
-      /* Fix phi expressions in all out of loop bb.  */
-      imm_use_iterator imm_iter;
-      gimple *use_stmt;
-      use_operand_p use_p;
-      tree ic_var = PHI_ARG_DEF_FROM_EDGE (phi1, update_e);
-      FOR_EACH_IMM_USE_STMT (use_stmt, imm_iter, ic_var)
-	if (!flow_bb_inside_loop_p (loop, gimple_bb (use_stmt)))
-	  FOR_EACH_IMM_USE_ON_STMT (use_p, imm_iter)
-	    SET_USE (use_p, ni_name);
+      /* Update the PHI argument on the requested edge.  */
+      adjust_phi_and_debug_stmts (phi1, update_e, ni_name);
     }
 }
 
