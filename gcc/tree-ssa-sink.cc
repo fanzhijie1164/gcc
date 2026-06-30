@@ -265,11 +265,7 @@ select_best_block (basic_block early_bb,
     }
 
   gcc_checking_assert (best_bb == early_bb
-		       || (!do_not_sink (stmt, early_bb, best_bb)
-			   && ((bb_loop_depth (best_bb)
-				< bb_loop_depth (early_bb))
-			       || !dominated_by_p (CDI_POST_DOMINATORS,
-						   early_bb, best_bb))));
+		       || !do_not_sink (stmt, early_bb, best_bb));
 
   return best_bb;
 }
@@ -466,6 +462,9 @@ statement_sink_location (gimple *stmt, basic_block frombb,
 
   /* This can happen if there are multiple uses in a PHI.  */
   if (!sinkbb)
+    return false;
+
+  if (!dominated_by_p (CDI_DOMINATORS, sinkbb, frombb))
     return false;
 
   basic_block bestbb = select_best_block (frombb, sinkbb, stmt);
