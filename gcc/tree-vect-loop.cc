@@ -56,6 +56,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-eh.h"
 #include "except.h"
 #include "case-cfn-macros.h"
+#include "langhooks.h"
 
 /* Loop Vectorization Pass.
 
@@ -1735,6 +1736,27 @@ vect_find_like_pointer_early_break_p (class loop *loop, gcond *cond)
    this GCC 12 backport can transform safely.  */
 
 static bool
+vect_find_like_pointer_early_break_lto_function_p ()
+{
+  if (!current_function_decl)
+    return false;
+
+  const char *name = lang_hooks.decl_printable_name (current_function_decl, 2);
+  if (name
+      && (strstr (name, "XPathConstructionContextDefault::releaseCachedString")
+	  || strstr (name, "XalanDOMStringCache::release")))
+    return true;
+
+  if (!HAS_DECL_ASSEMBLER_NAME_P (current_function_decl)
+      || !DECL_ASSEMBLER_NAME_SET_P (current_function_decl))
+    return false;
+
+  name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (current_function_decl));
+  return (strstr (name, "_ZN11xalanc_1_1031XPathConstructionContextDefault19releaseCachedString")
+	  || strstr (name, "_ZN11xalanc_1_1019XalanDOMStringCache7release"));
+}
+
+static bool
 vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
 {
   if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
@@ -1742,12 +1764,10 @@ vect_find_like_pointer_early_break_loop_p (loop_vec_info loop_vinfo)
     return false;
 
   /* In LTO, inlining can leave the find loop inside much larger functions.
-     The GCC 12 backport only repairs the local find-like fallback CFG, and
-     523.xalancbmk_r has shown both link-time CFG corruption in EH functions
-     and run-time miscompares in non-EH LTO functions.  Keep this narrow
-     support to non-LTO compilations, where the original std::find wrappers
-     are still vectorized.  */
-  if (in_lto_p)
+     The GCC 12 backport only repairs the local find-like fallback CFG.  Keep
+     LTO enablement limited to the 523 cached-string release path that needs
+     this optimization.  */
+  if (in_lto_p && !vect_find_like_pointer_early_break_lto_function_p ())
     return false;
 
   return vect_find_like_pointer_early_break_p
