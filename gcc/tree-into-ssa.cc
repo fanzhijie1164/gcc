@@ -252,6 +252,8 @@ static vec<tree> symbols_to_rename;
 static void
 mark_for_renaming (tree sym)
 {
+  if (sym == NULL_TREE)
+    return;
   if (!symbols_to_rename_set)
     symbols_to_rename_set = BITMAP_ALLOC (NULL);
   if (bitmap_set_bit (symbols_to_rename_set, DECL_UID (sym)))
@@ -2633,6 +2635,8 @@ prepare_block_for_update_1 (basic_block bb, bool insert_phi_p)
 	continue;
 
       lhs_sym = DECL_P (lhs) ? lhs : SSA_NAME_VAR (lhs);
+      if (!lhs_sym)
+	continue;
       mark_for_renaming (lhs_sym);
       mark_def_interesting (lhs_sym, phi, bb, insert_phi_p);
 
@@ -2663,6 +2667,8 @@ prepare_block_for_update_1 (basic_block bb, bool insert_phi_p)
 	{
 	  tree use = gimple_vuse (stmt);
 	  tree sym = DECL_P (use) ? use : SSA_NAME_VAR (use);
+	  if (!sym)
+	    continue;
 	  mark_for_renaming (sym);
 	  mark_use_interesting (sym, stmt, bb, insert_phi_p);
 	}
@@ -2681,6 +2687,8 @@ prepare_block_for_update_1 (basic_block bb, bool insert_phi_p)
 	{
 	  tree def = gimple_vdef (stmt);
 	  tree sym = DECL_P (def) ? def : SSA_NAME_VAR (def);
+	  if (!sym)
+	    continue;
 	  mark_for_renaming (sym);
 	  mark_def_interesting (sym, stmt, bb, insert_phi_p);
 	}

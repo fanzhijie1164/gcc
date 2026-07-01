@@ -10385,6 +10385,7 @@ vectorizable_condition (vec_info *vinfo,
   vec<tree> vec_oprnds3 = vNULL;
   tree vec_cmp_type;
   bool masked = false;
+  bb_vec_info bb_vinfo = dyn_cast <bb_vec_info> (vinfo);
 
   if (!STMT_VINFO_RELEVANT_P (stmt_info) && !bb_vinfo)
     return false;
@@ -10863,9 +10864,8 @@ vectorizable_comparison_1 (vec_info *vinfo, tree vectype,
   int ndts = 2;
   poly_uint64 nunits;
   int ncopies;
-  enum tree_code code, bitop1 = NOP_EXPR, bitop2 = NOP_EXPR;
+  enum tree_code bitop1 = NOP_EXPR, bitop2 = NOP_EXPR;
   int i;
-  bb_vec_info bb_vinfo = dyn_cast <bb_vec_info> (vinfo);
   vec<tree> vec_oprnds0 = vNULL;
   vec<tree> vec_oprnds1 = vNULL;
   tree mask_type;
@@ -11207,11 +11207,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 
       if (LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo))
 	{
-	  if (direct_internal_fn_supported_p (IFN_VCOND_MASK_LEN, vectype,
-					      OPTIMIZE_FOR_SPEED))
-	    return false;
-	  else
-	    vect_record_loop_mask (loop_vinfo, masks, ncopies, vectype, NULL);
+	  vect_record_loop_mask (loop_vinfo, masks, ncopies, vectype, NULL);
 	}
 
 
@@ -11283,8 +11279,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 	for (unsigned i = 0; i < stmts.length (); i++)
 	  {
 	    tree stmt_mask
-	      = vect_get_loop_mask (loop_vinfo, gsi, masks, ncopies, vectype,
-				    i);
+	      = vect_get_loop_mask (gsi, masks, ncopies, vectype, i);
 	    stmt_mask
 	      = prepare_vec_mask (loop_vinfo, TREE_TYPE (stmt_mask), stmt_mask,
 				  stmts[i], &cond_gsi);
@@ -11310,7 +11305,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
       if (masked_loop_p)
 	{
 	  tree mask
-	    = vect_get_loop_mask (loop_vinfo, gsi, masks, ncopies, vectype, 0);
+	    = vect_get_loop_mask (gsi, masks, ncopies, vectype, 0);
 	  new_temp = prepare_vec_mask (loop_vinfo, TREE_TYPE (mask), mask,
 				       new_temp, &cond_gsi);
 	}
@@ -11320,11 +11315,6 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 
   gimple_cond_set_condition (cond_stmt, NE_EXPR, new_temp, cst);
   update_stmt (orig_stmt);
-
-  if (slp_node)
-    SLP_TREE_VEC_DEFS (slp_node).truncate (0);
-   else
-    STMT_VINFO_VEC_STMTS (stmt_info).truncate (0);
 
   if (!slp_node)
     *vec_stmt = orig_stmt;
@@ -11351,7 +11341,8 @@ can_vectorize_live_stmts (vec_info *vinfo,
       unsigned int i;
       FOR_EACH_VEC_ELT (SLP_TREE_SCALAR_STMTS (slp_node), i, slp_stmt_info)
 	{
-	  if ((STMT_VINFO_LIVE_P (slp_stmt_info)
+	  if (slp_stmt_info
+	      && (STMT_VINFO_LIVE_P (slp_stmt_info)
 	       || (loop_vinfo
 		   && LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
 		   && STMT_VINFO_DEF_TYPE (slp_stmt_info)
@@ -11559,8 +11550,6 @@ vect_analyze_stmt (vec_info *vinfo,
 				      cost_vec)
 	  || vectorizable_lc_phi (as_a <loop_vec_info> (vinfo),
 				  stmt_info, NULL, node)
-	  || vectorizable_recurr (as_a <loop_vec_info> (vinfo),
-				   stmt_info, NULL, node, cost_vec)
 	  || vectorizable_early_exit (vinfo, stmt_info, NULL, NULL, node,
 				      cost_vec));
   else
@@ -11704,6 +11693,11 @@ vect_transform_stmt (vec_info *vinfo,
     case comparison_vec_info_type:
       done = vectorizable_comparison (vinfo, stmt_info, gsi, &vec_stmt,
 				      slp_node, NULL);
+      if (!done
+	  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_condition_def
+	  && is_a <gcond *> (STMT_VINFO_STMT (stmt_info)))
+	done = vectorizable_early_exit (vinfo, stmt_info, gsi, &vec_stmt,
+					slp_node, NULL);
       gcc_assert (done);
       break;
 

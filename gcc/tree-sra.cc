@@ -1515,7 +1515,7 @@ scan_function (void)
 	      {
 		gasm *asm_stmt = as_a <gasm *> (stmt);
 		walk_stmt_load_store_addr_ops (asm_stmt, NULL, NULL, NULL,
-					       asm_visit_addr);
+					       scan_visit_addr);
 		if (stmt_ends_bb_p (asm_stmt)
 		    && !single_succ_p (gimple_bb (asm_stmt)))
 		  {

@@ -262,6 +262,22 @@ adjust_phi_and_debug_stmts (gimple *update_phi, edge e, tree new_def)
 			gimple_bb (update_phi));
 }
 
+/* GCC 12 only exposes get_loop_exit_condition for loops.  The vectorizer
+   patches use the equivalent edge form in a few places.  */
+static gcond *
+get_loop_exit_condition (const_edge e)
+{
+  if (!e || !e->src)
+    return NULL;
+
+  gimple_stmt_iterator gsi = gsi_last_bb (e->src);
+  if (gsi_end_p (gsi))
+    return NULL;
+
+  gimple *stmt = gsi_stmt (gsi);
+  return is_a <gcond *> (stmt) ? as_a <gcond *> (stmt) : NULL;
+}
+
 /* Define one loop rgroup control CTRL from loop LOOP.  INIT_CTRL is the value
    that the control should have during the first iteration and NEXT_CTRL is the
    value that it should have on subsequent iterations.  */
@@ -318,8 +334,7 @@ interleave_supported_p (vec_perm_indices *indices, tree vectype,
       sel.quick_push (base + i + nelts);
     }
   indices->new_vector (sel, 2, nelts);
-  return can_vec_perm_const_p (TYPE_MODE (vectype), TYPE_MODE (vectype),
-			       *indices);
+  return can_vec_perm_const_p (TYPE_MODE (vectype), *indices);
 }
 
 /* Try to use permutes to define the masks in DEST_RGM using the masks
@@ -572,15 +587,22 @@ vect_set_loop_controls_directly (class loop *loop, loop_vec_info loop_vinfo,
       /* Create decrement IV.  */
       if (LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo))
 	{
-	  create_iv (nitems_total, MINUS_EXPR, step, NULL_TREE, loop, &incr_gsi,
-		     insert_after, &index_before_incr, &index_after_incr);
-	  tree len = gimple_build (header_seq, IFN_SELECT_VL, iv_type,
-				   index_before_incr, nitems_step);
-	  gimple_seq_add_stmt (header_seq, gimple_build_assign (step, len));
+	  create_iv (nitems_total,
+		     fold_build2 (MINUS_EXPR, iv_type,
+				  build_zero_cst (iv_type), step),
+		     NULL_TREE, loop, &incr_gsi, insert_after,
+		     &index_before_incr, &index_after_incr);
+	  gimple_seq_add_stmt (header_seq,
+			       gimple_build_assign (step, MIN_EXPR,
+						    index_before_incr,
+						    nitems_step));
 	}
       else
 	{
-	  create_iv (nitems_total, MINUS_EXPR, nitems_step, NULL_TREE, loop,
+	  create_iv (nitems_total,
+		     fold_build2 (MINUS_EXPR, iv_type,
+				  build_zero_cst (iv_type), nitems_step),
+		     NULL_TREE, loop,
 		     &incr_gsi, insert_after, &index_before_incr,
 		     &index_after_incr);
 	  gimple_seq_add_stmt (header_seq,
@@ -595,9 +617,8 @@ vect_set_loop_controls_directly (class loop *loop, loop_vec_info loop_vinfo,
     }
 
   /* Create increment IV.  */
-  create_iv (build_int_cst (iv_type, 0), PLUS_EXPR, nitems_step, NULL_TREE,
-	     loop, &incr_gsi, insert_after, &index_before_incr,
-	     &index_after_incr);
+  create_iv (build_int_cst (iv_type, 0), nitems_step, NULL_TREE, loop,
+	     &incr_gsi, insert_after, &index_before_incr, &index_after_incr);
 
   tree zero_index = build_int_cst (compare_type, 0);
   tree test_index, test_limit, first_limit;
@@ -868,7 +889,7 @@ vect_set_loop_condition_partial_vectors (class loop *loop, edge exit_edge,
   rgroup_controls *iv_rgc = nullptr;
   unsigned int i;
   auto_vec<rgroup_controls> *controls = use_masks_p
-					  ? &LOOP_VINFO_MASKS (loop_vinfo).rgc_vec
+					  ? &LOOP_VINFO_MASKS (loop_vinfo)
 					  : &LOOP_VINFO_LENS (loop_vinfo);
   FOR_EACH_VEC_ELT (*controls, i, rgc)
     if (!rgc->controls.is_empty ())
@@ -979,6 +1000,7 @@ vect_set_loop_condition_partial_vectors (class loop *loop, edge exit_edge,
    Insert the branch-back condition before LOOP_COND_GSI and return the
    final gcond.  */
 
+#if 0
 static gcond *
 vect_set_loop_condition_partial_vectors_avx512 (class loop *loop,
 					 edge exit_edge,
@@ -1044,7 +1066,10 @@ vect_set_loop_condition_partial_vectors_avx512 (class loop *loop,
   gimple_stmt_iterator incr_gsi;
   bool insert_after;
   vect_iv_increment_position (exit_edge, &incr_gsi, &insert_after);
-  create_iv (niters_adj, MINUS_EXPR, iv_step, NULL_TREE, loop,
+  create_iv (niters_adj,
+	     fold_build2 (MINUS_EXPR, iv_type, build_zero_cst (iv_type),
+			  iv_step),
+	     NULL_TREE, loop,
 	     &incr_gsi, insert_after, &index_before_incr,
 	     &index_after_incr);
 
@@ -1220,6 +1245,7 @@ vect_set_loop_condition_partial_vectors_avx512 (class loop *loop,
 
   return cond_stmt;
 }
+#endif
 
 
 /* Like vect_set_loop_condition, but handle the case in which the vector
@@ -1320,8 +1346,8 @@ vect_set_loop_condition_normal (loop_vec_info /* loop_vinfo */, edge exit_edge,
     }
 
   vect_iv_increment_position (exit_edge, &incr_gsi, &insert_after);
-  create_iv (init, PLUS_EXPR, step, NULL_TREE, loop,
-             &incr_gsi, insert_after, &indx_before_incr, &indx_after_incr);
+  create_iv (init, step, NULL_TREE, loop, &incr_gsi, insert_after,
+	     &indx_before_incr, &indx_after_incr);
   indx_after_incr = force_gimple_operand_gsi (&loop_cond_gsi, indx_after_incr,
 					      true, NULL_TREE, true,
 					      GSI_SAME_STMT);
@@ -1399,20 +1425,11 @@ vect_set_loop_condition (class loop *loop, edge loop_e, loop_vec_info loop_vinfo
   gimple_stmt_iterator loop_cond_gsi = gsi_for_stmt (orig_cond);
 
   if (loop_vinfo && LOOP_VINFO_USING_PARTIAL_VECTORS_P (loop_vinfo))
-    {
-      if (LOOP_VINFO_PARTIAL_VECTORS_STYLE (loop_vinfo) == vect_partial_vectors_avx512)
-	cond_stmt = vect_set_loop_condition_partial_vectors_avx512 (loop, loop_e,
-								    loop_vinfo,
-								    niters, final_iv,
-								    niters_maybe_zero,
-								    loop_cond_gsi);
-      else
-	cond_stmt = vect_set_loop_condition_partial_vectors (loop, loop_e,
-							     loop_vinfo,
-							     niters, final_iv,
-							     niters_maybe_zero,
-							     loop_cond_gsi);
-    }
+    cond_stmt = vect_set_loop_condition_partial_vectors (loop, loop_e,
+							 loop_vinfo,
+							 niters, final_iv,
+							 niters_maybe_zero,
+							 loop_cond_gsi);
   else
     cond_stmt = vect_set_loop_condition_normal (loop_vinfo, loop_e, loop,
 						niters,
@@ -1616,7 +1633,7 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
       for (auto gsi_from = gsi_start_phis (loop_exit->dest);
 	   !gsi_end_p (gsi_from); gsi_next (&gsi_from))
 	{
-	  tree res = gimple_phi_result (*gsi_from);
+	  tree res = gimple_phi_result (gsi_from.phi ());
 	  create_phi_node (copy_ssa_name (res), new_preheader);
 	}
       edge e = redirect_edge_and_branch (loop_exit, new_preheader);
@@ -1662,7 +1679,7 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
 	      {
 		tree vphi_def = NULL_TREE;
 		if (gphi *evphi = get_virtual_phi (exit->dest))
-		  vphi_def = gimple_phi_arg_def_from_edge (evphi, exit);
+		  vphi_def = PHI_ARG_DEF_FROM_EDGE (evphi, exit);
 		edge res = redirect_edge_and_branch (exit, alt_loop_exit_block);
 		gcc_assert (res == exit);
 		redirect_edge_var_map_clear (exit);
@@ -1704,8 +1721,8 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
 	  for (auto psi = gsi_start_phis (main_loop_exit_block);
 	       !gsi_end_p (psi); gsi_next (&psi))
 	    {
-	      gphi *phi = *psi;
-	      tree new_arg = gimple_phi_arg_def_from_edge (phi, loop_exit);
+	      gphi *phi = psi.phi ();
+	      tree new_arg = PHI_ARG_DEF_FROM_EDGE (phi, loop_exit);
 	      if (TREE_CODE (new_arg) != SSA_NAME)
 		continue;
 
@@ -1772,7 +1789,7 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
 		  tree new_res = copy_ssa_name (gimple_phi_result (from_phi));
 		  gphi *lcssa_phi = create_phi_node (new_res, new_preheader);
 		  edge main_e = single_succ_edge (main_loop_exit_block);
-		  SET_PHI_ARG_DEF_ON_EDGE (lcssa_phi, main_e, new_arg);
+		  SET_PHI_ARG_DEF (lcssa_phi, main_e->dest_idx, new_arg);
 
 		  /* And adjust the epilog entry value.  */
 		  adjust_phi_and_debug_stmts (to_phi, loop_entry, new_res);
@@ -1808,7 +1825,7 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
 		      alt_arg = alt_def;
 		    }
 		  edge alt_e = single_succ_edge (alt_loop_exit_block);
-		  SET_PHI_ARG_DEF_ON_EDGE (to_phi, alt_e, alt_arg);
+		  SET_PHI_ARG_DEF (to_phi, alt_e->dest_idx, alt_arg);
 		}
 	    }
 	  /* For the single exit case only create the missing LC PHI nodes
@@ -1837,7 +1854,7 @@ slpeel_tree_duplicate_loop_to_edge_cfg (class loop *loop, edge loop_exit,
 
 		  tree new_res = copy_ssa_name (gimple_phi_result (from_phi));
 		  gphi *lcssa_phi = create_phi_node (new_res, new_preheader);
-		  SET_PHI_ARG_DEF_ON_EDGE (lcssa_phi, loop_exit, new_arg);
+		  SET_PHI_ARG_DEF (lcssa_phi, loop_exit->dest_idx, new_arg);
 		  adjust_phi_and_debug_stmts (to_phi, loop_entry, new_res);
 		}
 	    }
@@ -2028,6 +2045,9 @@ bool
 slpeel_can_duplicate_loop_p (const class loop *loop, const_edge exit_e,
 			     const_edge e)
 {
+  if (!exit_e)
+    return false;
+
   edge entry_e = loop_preheader_edge (loop);
   gcond *orig_cond = get_loop_exit_condition (exit_e);
   gimple_stmt_iterator loop_exit_gsi = gsi_last_bb (exit_e->src);
@@ -2036,7 +2056,6 @@ slpeel_can_duplicate_loop_p (const class loop *loop, const_edge exit_e,
      the function itself.  */
   if (!loop_outer (loop)
       || !empty_block_p (loop->latch)
-      || !exit_e
       /* Verify that new loop exit condition can be trivially modified.  */
       || (!orig_cond || orig_cond != gsi_stmt (loop_exit_gsi))
       || (e != exit_e && e != entry_e))
@@ -2124,9 +2143,15 @@ static bool
 vect_can_peel_nonlinear_iv_p (loop_vec_info loop_vinfo,
 			      stmt_vec_info stmt_info)
 {
-  enum vect_induction_op_type induction_type
-    = STMT_VINFO_LOOP_PHI_EVOLUTION_TYPE (stmt_info);
-  tree niters_skip;
+  (void) loop_vinfo;
+  (void) stmt_info;
+  return false;
+}
+#if 0
+static bool
+vect_can_peel_nonlinear_iv_p_unused (loop_vec_info loop_vinfo,
+				     stmt_vec_info stmt_info)
+{
   /* Init_expr will be update by vect_update_ivs_after_vectorizer,
      if niters or vf is unkown:
      For shift, when shift mount >= precision, there would be UD.
@@ -2187,6 +2212,7 @@ vect_can_peel_nonlinear_iv_p (loop_vec_info loop_vinfo,
 
   return true;
 }
+#endif
 
 /* Function vect_can_advance_ivs_p
 
@@ -2211,7 +2237,6 @@ vect_can_advance_ivs_p (loop_vec_info loop_vinfo)
   for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
     {
       tree evolution_part;
-      enum vect_induction_op_type induction_type;
 
       gphi *phi = gsi.phi ();
       stmt_vec_info phi_info = loop_vinfo->lookup_stmt (phi);
@@ -2228,15 +2253,6 @@ vect_can_advance_ivs_p (loop_vec_info loop_vinfo)
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_NOTE, vect_location,
 			     "reduc or virtual phi. skip.\n");
-	  continue;
-	}
-
-      induction_type = STMT_VINFO_LOOP_PHI_EVOLUTION_TYPE (phi_info);
-      if (induction_type != vect_step_op_add)
-	{
-	  if (!vect_can_peel_nonlinear_iv_p (loop_vinfo, phi_info))
-	    return false;
-
 	  continue;
 	}
 
@@ -2365,30 +2381,17 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo,
 
       init_expr = PHI_ARG_DEF_FROM_EDGE (phi, loop_preheader_edge (loop));
       gimple_seq stmts = NULL;
-      enum vect_induction_op_type induction_type
-	= STMT_VINFO_LOOP_PHI_EVOLUTION_TYPE (phi_info);
+      tree stype = TREE_TYPE (step_expr);
+      off = fold_build2 (MULT_EXPR, stype,
+			 fold_convert (stype, niters), step_expr);
 
-      if (induction_type == vect_step_op_add)
-	{
-	  tree stype = TREE_TYPE (step_expr);
-	  off = fold_build2 (MULT_EXPR, stype,
-			       fold_convert (stype, niters), step_expr);
-
-	  if (POINTER_TYPE_P (type))
-	    ni = fold_build_pointer_plus (init_expr, off);
-	  else
-	    ni = fold_convert (type,
-			       fold_build2 (PLUS_EXPR, stype,
-					    fold_convert (stype, init_expr),
-					    off));
-	}
-      /* Don't bother call vect_peel_nonlinear_iv_init.  */
-      else if (induction_type == vect_step_op_neg)
-	ni = init_expr;
+      if (POINTER_TYPE_P (type))
+	ni = fold_build_pointer_plus (init_expr, off);
       else
-	ni = vect_peel_nonlinear_iv_init (&stmts, init_expr,
-					  niters, step_expr,
-					  induction_type);
+	ni = fold_convert (type,
+			   fold_build2 (PLUS_EXPR, stype,
+					fold_convert (stype, init_expr),
+					off));
 
       var = create_tmp_var (type, "tmp");
 
@@ -3127,7 +3130,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   profile_probability prob_prolog, prob_vector, prob_epilog;
   int estimated_vf;
   int prolog_peeling = 0;
-  bool vect_epilogues = loop_vinfo->epilogue_vinfo != NULL;
+  bool vect_epilogues = !loop_vinfo->epilogue_vinfos.is_empty ();
 
   if (!vect_use_loop_mask_for_alignment_p (loop_vinfo))
     prolog_peeling = LOOP_VINFO_PEELING_FOR_ALIGNMENT (loop_vinfo);
@@ -3205,6 +3208,8 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
      update SSA form in slpeel_tree_duplicate_loop_to_edge_cfg and delete all
      update SSA state after that, so we have to make sure to not lose any
      pending update needs.  */
+  if (need_ssa_update_p (cfun))
+    update_ssa (TODO_update_ssa);
   gcc_assert (!need_ssa_update_p (cfun));
 
   /* If we're vectorizing an epilogue loop, we have ensured that the
@@ -3248,7 +3253,8 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   else
     niters_prolog = build_int_cst (type, 0);
 
-  loop_vec_info epilogue_vinfo = loop_vinfo->epilogue_vinfo;
+  loop_vec_info epilogue_vinfo
+    = vect_epilogues ? loop_vinfo->epilogue_vinfos[0] : NULL;
   tree niters_vector_mult_vf = NULL_TREE;
   /* Saving NITERs before the loop, as this may be changed by prologue.  */
   tree before_loop_niters = LOOP_VINFO_NITERS (loop_vinfo);
@@ -3582,15 +3588,17 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 		 which we can then take as the same on all exits,
 		 we've removed the LC SSA PHI on the main exit before
 		 so we wouldn't need to create a loop PHI for it.  */
-	      if (virtual_operand_p (gimple_phi_result (*gsi))
+	      gphi *phi = gsi.phi ();
+	      if (virtual_operand_p (gimple_phi_result (phi))
 		  && (gsi_end_p (gsi2)
-		      || !virtual_operand_p (gimple_phi_result (*gsi2))))
-		add_phi_arg (*gsi,
-			     gimple_phi_arg_def_from_edge (*gsi, epilog_e),
+		      || !virtual_operand_p (gimple_phi_result (gsi2.phi ()))))
+		add_phi_arg (phi,
+			     PHI_ARG_DEF_FROM_EDGE (phi, epilog_e),
 			     guard_e, UNKNOWN_LOCATION);
 	      else
 		{
-		  add_phi_arg (*gsi, gimple_phi_result (*gsi2), guard_e,
+		  gphi *phi2 = gsi2.phi ();
+		  add_phi_arg (phi, gimple_phi_result (phi2), guard_e,
 			       UNKNOWN_LOCATION);
 		  gsi_next (&gsi2);
 		}
@@ -3714,7 +3722,8 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 	 a multiple of the epilogue loop's vectorization factor.
 	 We should have rejected the loop during the analysis phase
 	 if this fails.  */
-      bool res = vect_determine_partial_vectors_and_peeling (epilogue_vinfo);
+      opt_result res
+	= vect_determine_partial_vectors_and_peeling (epilogue_vinfo, true);
       gcc_assert (res);
     }
 
@@ -4048,7 +4057,7 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
 						      is_gimple_val, NULL_TREE);
       /* Split prob () into two so that the overall probability of passing
 	 both the cost-model and versioning checks is the orig prob.  */
-      prob2 = prob = prob.sqrt ();
+      prob2 = prob;
     }
 
   if (version_niter)
@@ -4152,7 +4161,7 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
     {
       gcc_assert (scalar_loop);
       condition_bb = gimple_bb (loop_vectorized_call);
-      cond = as_a <gcond *> (*gsi_last_bb (condition_bb));
+      cond = as_a <gcond *> (gsi_stmt (gsi_last_bb (condition_bb)));
       gimple_cond_set_condition_from_tree (cond, cond_expr);
       update_stmt (cond);
 
@@ -4216,7 +4225,8 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
       if (loop_to_version == loop)
 	for (auto gsi = gsi_start_phis (loop->header);
 	     !gsi_end_p (gsi); gsi_next (&gsi))
-	  loop_vinfo->resync_stmt_addr (gsi.phi ());
+	  if (stmt_vec_info stmt_info = loop_vinfo->lookup_stmt (gsi.phi ()))
+	    stmt_info->stmt = gsi.phi ();
 
       /* We will later insert second conditional so overall outcome of
 	 both is prob * prob2.  */
