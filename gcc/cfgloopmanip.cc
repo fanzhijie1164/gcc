@@ -1,5 +1,5 @@
 /* Loop manipulation code for GNU compiler.
-   Copyright (C) 2002-2023 Free Software Foundation, Inc.
+   Copyright (C) 2002-2022 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -499,7 +499,8 @@ scale_loop_frequencies (class loop *loop, profile_probability p)
 }
 
 /* Scale profile in LOOP by P.
-   If ITERATION_BOUND is non-zero, scale even further if loop is predicted
+   If ITERATION_BOUND is neither zero nor -1, scale even further if loop is
+   predicted
    to iterate too many times.
    Before caling this function, preheader block profile should be already
    scaled to final count.  This is necessary because loop iterations are
@@ -525,7 +526,7 @@ scale_loop_profile (class loop *loop, profile_probability p,
   /* Scale the probabilities.  */
   scale_loop_frequencies (loop, p);
 
-  if (iteration_bound == 0)
+  if (iteration_bound == 0 || iteration_bound == -1)
     return;
 
   gcov_type iterations = expected_loop_iterations_unbounded (loop, NULL, true);
@@ -553,39 +554,41 @@ scale_loop_profile (class loop *loop, profile_probability p,
       profile_count count_delta = profile_count::zero ();
 
       e = single_exit (loop);
-      if (e)
+      if (!e)
 	{
-	  edge other_e;
-	  FOR_EACH_EDGE (other_e, ei, e->src->succs)
-	    if (!(other_e->flags & (EDGE_ABNORMAL | EDGE_FAKE))
-		&& e != other_e)
-	      break;
-
-	  /* Probability of exit must be 1/iterations.  */
-	  count_delta = e->count ();
-	  e->probability = profile_probability::always () / iteration_bound;
-	  other_e->probability = e->probability.invert ();
-
-	  /* In code below we only handle the following two updates.  */
-	  if (other_e->dest != loop->header
-	      && other_e->dest != loop->latch
-	      && (dump_file && (dump_flags & TDF_DETAILS)))
-	    {
-	      fprintf (dump_file, ";; giving up on update of paths from "
-		       "exit condition to latch\n");
-	    }
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file, ";; Loop has multiple exit edges; "
+		     "giving up on exit condition update\n");
+	  return;
 	}
-      else
-        if (dump_file && (dump_flags & TDF_DETAILS))
-	  fprintf (dump_file, ";; Loop has multiple exit edges; "
-	      		      "giving up on exit condition update\n");
+
+      edge other_e;
+      FOR_EACH_EDGE (other_e, ei, e->src->succs)
+	if (!(other_e->flags & (EDGE_ABNORMAL | EDGE_FAKE))
+	    && e != other_e)
+	  break;
+
+      /* Probability of exit must be 1/iterations.  */
+      count_delta = e->count ();
+      e->probability = profile_probability::always ()
+				.apply_scale (1, iteration_bound);
+      other_e->probability = e->probability.invert ();
+
+      /* In code below we only handle the following two updates.  */
+      if (other_e->dest != loop->header
+	  && other_e->dest != loop->latch
+	  && (dump_file && (dump_flags & TDF_DETAILS)))
+	{
+	  fprintf (dump_file, ";; giving up on update of paths from "
+		   "exit condition to latch\n");
+	}
 
       /* Roughly speaking we want to reduce the loop body profile by the
 	 difference of loop iterations.  We however can do better if
 	 we look at the actual profile, if it is available.  */
       p = profile_probability::always ();
 
-      count_in *= iteration_bound;
+      count_in = count_in.apply_scale (iteration_bound, 1);
       p = count_in.probability_in (loop->header->count);
       if (!(p > profile_probability::never ()))
 	p = profile_probability::very_unlikely ();
@@ -826,7 +829,7 @@ create_empty_loop_on_edge (edge entry_edge,
     }
 
   gsi = gsi_last_bb (loop_header);
-  create_iv (initial_value, PLUS_EXPR, stride, iv, loop, &gsi, false,
+  create_iv (initial_value, stride, iv, loop, &gsi, false,
 	     iv_before, iv_after);
 
   /* Insert loop exit condition.  */
@@ -1350,6 +1353,7 @@ duplicate_loop_body_to_header_edge (class loop *loop, edge e,
       unsigned j;
 
       bb = bbs[i];
+      bb->aux = 0;
 
       auto_vec<basic_block> dom_bbs = get_dominated_by (CDI_DOMINATORS, bb);
       FOR_EACH_VEC_ELT (dom_bbs, j, dominated)

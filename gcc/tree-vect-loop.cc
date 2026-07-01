@@ -722,80 +722,173 @@ vect_fixup_scalar_cycles_with_patterns (loop_vec_info loop_vinfo)
    in NUMBER_OF_ITERATIONSM1.  Place the condition under which the
    niter information holds in ASSUMPTIONS.
 
-   Return the loop exit condition.  */
+   Return the loop exit conditions.  */
 
 
-static gcond *
-vect_get_loop_niters (class loop *loop, tree *assumptions,
+static gcond *vect_get_loop_exit_condition (const_edge);
+
+static vec<gcond *>
+vect_get_loop_niters (class loop *loop, const_edge main_exit, tree *assumptions,
 		      tree *number_of_iterations, tree *number_of_iterationsm1)
 {
-  edge exit = single_exit (loop);
+  auto_vec<edge> exits = get_loop_exit_edges (loop);
+  vec<gcond *> conds;
+  conds.create (exits.length ());
   class tree_niter_desc niter_desc;
   tree niter_assumptions, niter, may_be_zero;
-  gcond *cond = get_loop_exit_condition (loop);
 
   *assumptions = boolean_true_node;
   *number_of_iterationsm1 = chrec_dont_know;
   *number_of_iterations = chrec_dont_know;
   DUMP_VECT_SCOPE ("get_loop_niters");
 
-  if (!exit)
-    return cond;
+  if (exits.is_empty ())
+    return conds;
 
-  may_be_zero = NULL_TREE;
-  if (!number_of_iterations_exit_assumptions (loop, exit, &niter_desc, NULL)
-      || chrec_contains_undetermined (niter_desc.niter))
-    return cond;
+  if (dump_enabled_p ())
+    dump_printf_loc (MSG_NOTE, vect_location, "Loop has %d exits.\n",
+		     exits.length ());
 
-  niter_assumptions = niter_desc.assumptions;
-  may_be_zero = niter_desc.may_be_zero;
-  niter = niter_desc.niter;
-
-  if (may_be_zero && integer_zerop (may_be_zero))
-    may_be_zero = NULL_TREE;
-
-  if (may_be_zero)
+  edge exit;
+  unsigned int i;
+  FOR_EACH_VEC_ELT (exits, i, exit)
     {
-      if (COMPARISON_CLASS_P (may_be_zero))
-	{
-	  /* Try to combine may_be_zero with assumptions, this can simplify
-	     computation of niter expression.  */
-	  if (niter_assumptions && !integer_nonzerop (niter_assumptions))
-	    niter_assumptions = fold_build2 (TRUTH_AND_EXPR, boolean_type_node,
-					     niter_assumptions,
-					     fold_build1 (TRUTH_NOT_EXPR,
-							  boolean_type_node,
-							  may_be_zero));
-	  else
-	    niter = fold_build3 (COND_EXPR, TREE_TYPE (niter), may_be_zero,
-				 build_int_cst (TREE_TYPE (niter), 0),
-				 rewrite_to_non_trapping_overflow (niter));
+      gcond *cond = vect_get_loop_exit_condition (exit);
+      if (cond)
+	conds.safe_push (cond);
 
-	  may_be_zero = NULL_TREE;
-	}
-      else if (integer_nonzerop (may_be_zero))
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location, "Analyzing exit %d...\n", i);
+
+      if (exit != main_exit)
+	continue;
+
+      may_be_zero = NULL_TREE;
+      if (!number_of_iterations_exit_assumptions (loop, exit, &niter_desc, NULL)
+	  || chrec_contains_undetermined (niter_desc.niter))
+	continue;
+
+      niter_assumptions = niter_desc.assumptions;
+      may_be_zero = niter_desc.may_be_zero;
+      niter = niter_desc.niter;
+
+      if (may_be_zero && integer_zerop (may_be_zero))
+	may_be_zero = NULL_TREE;
+
+      if (may_be_zero)
 	{
-	  *number_of_iterationsm1 = build_int_cst (TREE_TYPE (niter), 0);
-	  *number_of_iterations = build_int_cst (TREE_TYPE (niter), 1);
-	  return cond;
+	  if (COMPARISON_CLASS_P (may_be_zero))
+	    {
+	      /* Try to combine may_be_zero with assumptions, this can simplify
+		 computation of niter expression.  */
+	      if (niter_assumptions && !integer_nonzerop (niter_assumptions))
+		niter_assumptions = fold_build2 (TRUTH_AND_EXPR,
+						 boolean_type_node,
+						 niter_assumptions,
+						 fold_build1 (TRUTH_NOT_EXPR,
+							      boolean_type_node,
+							      may_be_zero));
+	      else
+		niter = fold_build3 (COND_EXPR, TREE_TYPE (niter), may_be_zero,
+				     build_int_cst (TREE_TYPE (niter), 0),
+				     rewrite_to_non_trapping_overflow (niter));
+
+	      may_be_zero = NULL_TREE;
+	    }
+	  else if (integer_nonzerop (may_be_zero))
+	    {
+	      *number_of_iterationsm1 = build_int_cst (TREE_TYPE (niter), 0);
+	      *number_of_iterations = build_int_cst (TREE_TYPE (niter), 1);
+	      continue;
+	    }
+	  else
+	    continue;
 	}
-      else
-	return cond;
+
+      *assumptions = niter_assumptions;
+      *number_of_iterationsm1 = niter;
+
+      /* We want the number of loop header executions which is the number
+	 of latch executions plus one.
+	 ???  For UINT_MAX latch executions this number overflows to zero
+	 for loops like do { n++; } while (n != 0);  */
+      if (niter && !chrec_contains_undetermined (niter))
+	{
+	  niter = fold_build2 (PLUS_EXPR, TREE_TYPE (niter),
+			       unshare_expr (niter),
+			       build_int_cst (TREE_TYPE (niter), 1));
+	  if (TREE_CODE (niter) == INTEGER_CST
+	      && TREE_CODE (*number_of_iterationsm1) != INTEGER_CST)
+	    {
+	      *number_of_iterationsm1
+		= fold_build2 (PLUS_EXPR, TREE_TYPE (niter), niter,
+			       build_minus_one_cst (TREE_TYPE (niter)));
+	    }
+	}
+      *number_of_iterations = niter;
     }
 
-  *assumptions = niter_assumptions;
-  *number_of_iterationsm1 = niter;
+  if (dump_enabled_p ())
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "All loop exits successfully analyzed.\n");
 
-  /* We want the number of loop header executions which is the number
-     of latch executions plus one.
-     ???  For UINT_MAX latch executions this number overflows to zero
-     for loops like do { n++; } while (n != 0);  */
-  if (niter && !chrec_contains_undetermined (niter))
-    niter = fold_build2 (PLUS_EXPR, TREE_TYPE (niter), unshare_expr (niter),
-			  build_int_cst (TREE_TYPE (niter), 1));
-  *number_of_iterations = niter;
+  return conds;
+}
 
-  return cond;
+/* Return the loop-exit condition for EXIT_EDGE.  */
+
+static gcond *
+vect_get_loop_exit_condition (const_edge exit_edge)
+{
+  gimple_stmt_iterator gsi;
+
+  if (!exit_edge)
+    return NULL;
+
+  gsi = gsi_last_bb (exit_edge->src);
+  if (gsi_end_p (gsi))
+    return NULL;
+
+  gimple *stmt = gsi_stmt (gsi);
+  if (!is_a <gcond *> (stmt))
+    return NULL;
+
+  return as_a <gcond *> (stmt);
+}
+
+/* Determine the main loop exit for the vectorizer.  */
+
+edge
+vec_init_loop_exit_info (class loop *loop)
+{
+  auto_vec<edge> exits = get_loop_exit_edges (loop);
+  if (exits.length () == 1)
+    return exits[0];
+
+  class tree_niter_desc niter_desc;
+  edge candidate = NULL;
+  for (edge exit : exits)
+    {
+      if (!vect_get_loop_exit_condition (exit))
+	continue;
+
+      if (number_of_iterations_exit_assumptions (loop, exit, &niter_desc, NULL)
+	  && !chrec_contains_undetermined (niter_desc.niter))
+	{
+	  tree may_be_zero = niter_desc.may_be_zero;
+	  if ((integer_zerop (may_be_zero)
+	       || (single_pred_p (loop->latch)
+		   && exit->src == single_pred (loop->latch)
+		   && (integer_nonzerop (may_be_zero)
+		       || COMPARISON_CLASS_P (may_be_zero))))
+	      && (!candidate
+		  || dominated_by_p (CDI_DOMINATORS, exit->src,
+				     candidate->src)))
+	    candidate = exit;
+	}
+    }
+
+  return candidate;
 }
 
 /* Function bb_in_loop_p
@@ -1494,14 +1587,15 @@ vect_analyze_loop_form (class loop *loop, gimple *loop_vectorized_call,
 				       " abnormal loop exit edge.\n");
     }
 
-  info->loop_cond
-    = vect_get_loop_niters (loop, &info->assumptions,
+  info->conds
+    = vect_get_loop_niters (loop, exit_e, &info->assumptions,
 			    &info->number_of_iterations,
 			    &info->number_of_iterationsm1);
-  if (!info->loop_cond)
+  if (info->conds.is_empty ())
     return opt_result::failure_at
       (vect_location,
        "not vectorized: complicated exit condition.\n");
+  info->loop_cond = info->conds[0];
 
   if (integer_zerop (info->assumptions)
       || !info->number_of_iterations
@@ -2651,9 +2745,9 @@ start_over:
       if (dump_enabled_p ())
         dump_printf_loc (MSG_NOTE, vect_location, "epilog loop required\n");
       if (!vect_can_advance_ivs_p (loop_vinfo)
-	  || !slpeel_can_duplicate_loop_p (LOOP_VINFO_LOOP (loop_vinfo),
-					   single_exit (LOOP_VINFO_LOOP
-							 (loop_vinfo))))
+	  || !slpeel_can_duplicate_loop_p (loop,
+					   LOOP_VINFO_IV_EXIT (loop_vinfo),
+					   LOOP_VINFO_IV_EXIT (loop_vinfo)))
         {
 	  ok = opt_result::failure_at (vect_location,
 				       "not vectorized: can't create required "
@@ -5454,7 +5548,7 @@ vect_create_epilog_for_reduction (loop_vec_info loop_vinfo,
       gimple_stmt_iterator incr_gsi;
       bool insert_after;
       vect_iv_increment_position (loop_exit, &incr_gsi, &insert_after);
-      create_iv (series_vect, PLUS_EXPR, vec_step, NULL_TREE, loop, &incr_gsi,
+      create_iv (series_vect, vec_step, NULL_TREE, loop, &incr_gsi,
 		 insert_after, &indx_before_incr, &indx_after_incr);
 
       /* Next create a new phi node vector (NEW_PHI_TREE) which starts
@@ -8872,11 +8966,8 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
 	 where VEC_LHS is the vectorized live-out result and MASK is
 	 the loop mask for the final iteration.  */
       gcc_assert (ncopies == 1 && !slp_node);
-      gimple_seq tem = NULL;
-      gimple_stmt_iterator gsi = gsi_last (tem);
-      tree len = vect_get_loop_len (loop_vinfo, &gsi,
-				    &LOOP_VINFO_LENS (loop_vinfo),
-				    1, vectype, 0, 0);
+      tree len = vect_get_loop_len (loop_vinfo, &LOOP_VINFO_LENS (loop_vinfo),
+				    1, 0);
 
       /* BIAS - 1.  */
       signed char biasval = LOOP_VINFO_PARTIAL_LOAD_STORE_BIAS (loop_vinfo);
@@ -8896,9 +8987,13 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
       gcc_assert (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo));
 
       /* SCALAR_RES = VEC_EXTRACT <VEC_LHS, LEN + BIAS - 1>.  */
+      tree scalar_type = TREE_TYPE (vectype);
       tree scalar_res
-	= gimple_build (&stmts, CFN_VEC_EXTRACT, TREE_TYPE (vectype),
-			vec_lhs_phi, last_index);
+	= build3 (BIT_FIELD_REF, scalar_type, vec_lhs_phi,
+		  TYPE_SIZE (scalar_type),
+		  fold_build2 (MULT_EXPR, bitsizetype,
+			       fold_convert (bitsizetype, last_index),
+			       TYPE_SIZE (scalar_type)));
 
       /* Convert the extracted vector element to the scalar type.  */
       new_tree = gimple_convert (&stmts, lhs_type, scalar_res);
@@ -8915,8 +9010,7 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
       tree scalar_type = TREE_TYPE (STMT_VINFO_VECTYPE (stmt_info));
       gimple_seq tem = NULL;
       gimple_stmt_iterator gsi = gsi_last (tem);
-      tree mask = vect_get_loop_mask (loop_vinfo, &gsi,
-				      &LOOP_VINFO_MASKS (loop_vinfo),
+      tree mask = vect_get_loop_mask (&gsi, &LOOP_VINFO_MASKS (loop_vinfo),
 				      1, vectype, 0);
       tree scalar_res;
 
@@ -9162,13 +9256,25 @@ vectorizable_live_operation (vec_info *vinfo,
     {
       gcc_assert (!loop_vinfo || !LOOP_VINFO_FULLY_MASKED_P (loop_vinfo));
 
-      /* Get the correct slp vectorized stmt.  */
-      vec_stmt = SLP_TREE_VEC_STMTS (slp_node)[vec_entry];
-      vec_lhs = gimple_get_lhs (vec_stmt);
+      if (SLP_TREE_VEC_DEFS (slp_node).exists ())
+	{
+	  /* Get the correct slp vectorized stmt.  */
+	  vec_lhs = SLP_TREE_VEC_DEFS (slp_node)[vec_entry];
+	  vec_stmt = SSA_NAME_DEF_STMT (vec_lhs);
 
-      /* In case we need to early break vectorize also get the first stmt.  */
-      vec_lhs0 = SLP_TREE_VEC_DEFS (slp_node)[0];
-      vec_stmt0 = SSA_NAME_DEF_STMT (vec_lhs0);
+	  /* In case we need to early break vectorize also get the first stmt.  */
+	  vec_lhs0 = SLP_TREE_VEC_DEFS (slp_node)[0];
+	  vec_stmt0 = SSA_NAME_DEF_STMT (vec_lhs0);
+	}
+      else
+	{
+	  /* GCC 12 can still have only vectorized stmts materialized here.  */
+	  vec_stmt = SLP_TREE_VEC_STMTS (slp_node)[vec_entry];
+	  vec_lhs = gimple_get_lhs (vec_stmt);
+
+	  vec_stmt0 = SLP_TREE_VEC_STMTS (slp_node)[0];
+	  vec_lhs0 = gimple_get_lhs (vec_stmt0);
+	}
 
       /* Get entry to use.  */
       bitstart = bitsize_int (vec_index);
@@ -9247,13 +9353,13 @@ vectorizable_live_operation (vec_info *vinfo,
 						 &exit_gsi);
 
 	      if (gimple_phi_num_args (use_stmt) == 1)
-		{
-		  auto gsi = gsi_for_stmt (use_stmt);
-		  remove_phi_node (&gsi, false);
-		  tree lhs_phi = gimple_phi_result (use_stmt);
-		  gimple *copy = gimple_build_assign (lhs_phi, new_tree);
-		  gsi_insert_before (&exit_gsi, copy, GSI_SAME_STMT);
-		}
+			{
+			  auto gsi = gsi_for_stmt (use_stmt);
+			  tree lhs_phi = gimple_phi_result (use_stmt);
+			  remove_phi_node (&gsi, false);
+			  gimple *copy = gimple_build_assign (lhs_phi, new_tree);
+			  gsi_insert_before (&exit_gsi, copy, GSI_SAME_STMT);
+			}
 	      else
 		SET_PHI_ARG_DEF (use_stmt, e->dest_idx, new_tree);
 	  }
@@ -9607,8 +9713,20 @@ vect_get_loop_len (loop_vec_info loop_vinfo, vec_loop_lens *lens,
    by factor VF.  */
 
 static void
-scale_profile_for_vect_loop (class loop *loop, unsigned vf)
+scale_profile_for_vect_loop (class loop *loop, edge exit_e, unsigned vf,
+			     bool flat)
 {
+  if (flat)
+    {
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	fprintf (dump_file,
+		 "Vectorized loop profile seems flat; not scaling iteration "
+		 "count down by the vectorization factor %i\n", vf);
+      scale_loop_profile (loop, profile_probability::always (),
+			  get_likely_max_loop_iterations_int (loop));
+      return;
+    }
+
   edge preheader = loop_preheader_edge (loop);
   /* Reduce loop iterations by the vectorization factor.  */
   gcov_type new_est_niter = niter_for_unrolled_loop (loop, vf);
@@ -9626,7 +9744,9 @@ scale_profile_for_vect_loop (class loop *loop, unsigned vf)
       scale_loop_frequencies (loop, p);
     }
 
-  edge exit_e = single_exit (loop);
+  if (!exit_e)
+    return;
+
   exit_e->probability = profile_probability::always ()
 				 .apply_scale (1, new_est_niter + 1);
 
@@ -10266,7 +10386,8 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 			   !niters_no_overflow);
 
   unsigned int assumed_vf = vect_vf_for_cost (loop_vinfo);
-  scale_profile_for_vect_loop (loop, assumed_vf);
+  scale_profile_for_vect_loop (loop, LOOP_VINFO_IV_EXIT (loop_vinfo),
+			       assumed_vf, false);
 
   /* True if the final iteration might not handle a full vector's
      worth of scalar iterations.  */

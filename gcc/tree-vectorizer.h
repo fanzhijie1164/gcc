@@ -2152,7 +2152,7 @@ class auto_purge_vect_location
 extern void vect_set_loop_condition (class loop *, edge, loop_vec_info,
 				     tree, tree, tree, bool);
 extern bool slpeel_can_duplicate_loop_p (const class loop *, const_edge,
-					 const_edge);
+					 const_edge = NULL);
 class loop *slpeel_tree_duplicate_loop_to_edge_cfg (class loop *, edge,
 						    class loop *, edge,
 						    edge, edge *, bool = true,
@@ -2189,12 +2189,12 @@ extern bool vect_is_simple_use (vec_info *, stmt_vec_info, slp_tree,
 				tree *, stmt_vec_info * = NULL);
 extern bool vect_maybe_update_slp_op_vectype (slp_tree, tree);
 extern tree perm_mask_for_reverse (tree);
-extern bool supportable_widening_operation (vec_info*, code_helper,
+extern bool supportable_widening_operation (vec_info*, enum tree_code,
 					    stmt_vec_info, tree, tree,
-					    code_helper*, code_helper*,
+					    enum tree_code *, enum tree_code *,
 					    int*, vec<tree> *);
-extern bool supportable_narrowing_operation (code_helper, tree, tree,
-					     code_helper *, int *,
+extern bool supportable_narrowing_operation (enum tree_code, tree, tree,
+					     enum tree_code *, int *,
 					     vec<tree> *);
 
 extern unsigned record_stmt_cost (stmt_vector_for_cost *, int,
@@ -2282,9 +2282,11 @@ extern bool vect_slp_analyze_instance_alignment (vec_info *, slp_instance);
 extern opt_result vect_analyze_data_ref_accesses (vec_info *, vec<int> *);
 extern opt_result vect_prune_runtime_alias_test_list (loop_vec_info);
 extern bool vect_gather_scatter_fn_p (vec_info *, bool, bool, tree, tree,
-				      tree, int, internal_fn *, tree *);
+				      tree, int, internal_fn *, tree *,
+				      vec<int> * = NULL);
 extern bool vect_check_gather_scatter (stmt_vec_info, loop_vec_info,
-				       gather_scatter_info *);
+				       gather_scatter_info *,
+				       vec<int> * = NULL);
 extern opt_result vect_find_stmt_data_reference (loop_p, gimple *,
 						 vec<data_reference_p> *,
 						 vec<int> *, int);
@@ -2302,7 +2304,8 @@ extern tree vect_create_destination_var (tree, tree);
 extern bool vect_grouped_store_supported (tree, unsigned HOST_WIDE_INT);
 extern bool vect_store_lanes_supported (tree, unsigned HOST_WIDE_INT, bool);
 extern bool vect_grouped_load_supported (tree, bool, unsigned HOST_WIDE_INT);
-extern bool vect_load_lanes_supported (tree, unsigned HOST_WIDE_INT, bool);
+extern bool vect_load_lanes_supported (tree, unsigned HOST_WIDE_INT, bool,
+				       vec<int> * = NULL);
 extern void vect_permute_store_chain (vec_info *, vec<tree> &,
 				      unsigned int, stmt_vec_info,
 				      gimple_stmt_iterator *, vec<tree> *);

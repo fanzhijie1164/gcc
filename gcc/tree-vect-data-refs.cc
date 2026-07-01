@@ -102,10 +102,7 @@ vect_lanes_optab_supported_p (const char *name, convert_optab optab,
 		     "can use %s<%s><%s>\n", name, GET_MODE_NAME (array_mode),
 		     GET_MODE_NAME (mode));
 
-  if (elsvals)
-    get_supported_else_vals (icode,
-			     internal_fn_else_index (IFN_MASK_LEN_LOAD_LANES),
-			     *elsvals);
+  (void) elsvals;
 
   return true;
 }
@@ -122,10 +119,7 @@ simd_clone_call_p (gimple *stmt)
     return NULL;
 
   tree fndecl = NULL_TREE;
-  if (gimple_call_internal_p (call, IFN_MASK_CALL))
-    fndecl = TREE_OPERAND (gimple_call_arg (stmt, 0), 0);
-  else
-    fndecl = gimple_call_fndecl (stmt);
+  fndecl = gimple_call_fndecl (stmt);
 
   if (fndecl == NULL_TREE)
     return NULL;
@@ -1805,12 +1799,12 @@ vect_get_data_access_cost (vec_info *vinfo, dr_vec_info *dr_info,
     ncopies = vect_get_num_copies (loop_vinfo, STMT_VINFO_VECTYPE (stmt_info));
 
   if (DR_IS_READ (dr_info->dr))
-    vect_get_load_cost (vinfo, stmt_info, NULL, ncopies,
+    vect_get_load_cost (vinfo, stmt_info, ncopies,
 			alignment_support_scheme, misalignment, true,
 			inside_cost, outside_cost, prologue_cost_vec,
 			body_cost_vec, false);
   else
-    vect_get_store_cost (vinfo,stmt_info, NULL, ncopies,
+    vect_get_store_cost (vinfo,stmt_info, ncopies,
 			 alignment_support_scheme, misalignment, inside_cost,
 			 body_cost_vec);
 
@@ -4301,19 +4295,13 @@ vect_gather_scatter_fn_p (vec_info *vinfo, bool read_p, bool masked_p,
     {
       ifn = masked_p ? IFN_MASK_GATHER_LOAD : IFN_GATHER_LOAD;
       alt_ifn = IFN_MASK_GATHER_LOAD;
-      /* When target supports MASK_LEN_GATHER_LOAD, we always
-	 use MASK_LEN_GATHER_LOAD regardless whether len and
-	 mask are valid or not.  */
-      alt_ifn2 = IFN_MASK_LEN_GATHER_LOAD;
+      alt_ifn2 = IFN_LAST;
     }
   else
     {
       ifn = masked_p ? IFN_MASK_SCATTER_STORE : IFN_SCATTER_STORE;
       alt_ifn = IFN_MASK_SCATTER_STORE;
-      /* When target supports MASK_LEN_SCATTER_STORE, we always
-	 use MASK_LEN_SCATTER_STORE regardless whether len and
-	 mask are valid or not.  */
-      alt_ifn2 = IFN_MASK_LEN_SCATTER_STORE;
+      alt_ifn2 = IFN_LAST;
     }
 
   for (;;)
@@ -4324,8 +4312,7 @@ vect_gather_scatter_fn_p (vec_info *vinfo, bool read_p, bool masked_p,
 
       /* Test whether the target supports this combination.  */
       if (internal_gather_scatter_fn_supported_p (ifn, vectype, memory_type,
-						  offset_vectype, scale,
-						  elsvals))
+						  offset_vectype, scale))
 	{
 	  *ifn_out = ifn;
 	  *offset_vectype_out = offset_vectype;
@@ -4335,16 +4322,16 @@ vect_gather_scatter_fn_p (vec_info *vinfo, bool read_p, bool masked_p,
 	       && internal_gather_scatter_fn_supported_p (alt_ifn, vectype,
 							  memory_type,
 							  offset_vectype,
-							  scale, elsvals))
+							  scale))
 	{
 	  *ifn_out = alt_ifn;
 	  *offset_vectype_out = offset_vectype;
 	  return true;
 	}
-      else if (internal_gather_scatter_fn_supported_p (alt_ifn2, vectype,
+      else if (alt_ifn2 != IFN_LAST
+	       && internal_gather_scatter_fn_supported_p (alt_ifn2, vectype,
 						       memory_type,
-						       offset_vectype, scale,
-						       elsvals))
+						       offset_vectype, scale))
 	{
 	  *ifn_out = alt_ifn2;
 	  *offset_vectype_out = offset_vectype;
@@ -4420,7 +4407,7 @@ vect_check_gather_scatter (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
 	     (already succesful) check if we support a gather IFN
 	     and have it populate the else values.  */
 	  if (DR_IS_READ (dr) && internal_fn_mask_index (ifn) >= 0 && elsvals)
-	    supports_vec_gather_load_p (TYPE_MODE (vectype), elsvals);
+	    supports_vec_gather_load_p (TYPE_MODE (vectype));
 	  return true;
 	}
       masked_p = (ifn == IFN_MASK_LOAD || ifn == IFN_MASK_STORE);
@@ -4436,8 +4423,7 @@ vect_check_gather_scatter (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
   /* True if we should aim to use internal functions rather than
      built-in functions.  */
   bool use_ifn_p = (DR_IS_READ (dr)
-		    ? supports_vec_gather_load_p (TYPE_MODE (vectype),
-						  elsvals)
+		    ? supports_vec_gather_load_p (TYPE_MODE (vectype))
 		    : supports_vec_scatter_store_p (TYPE_MODE (vectype)));
 
   base = DR_REF (dr);
@@ -5562,8 +5548,7 @@ vect_create_data_ref_ptr (vec_info *vinfo, stmt_vec_info stmt_info,
 
       standard_iv_increment_position (loop, &incr_gsi, &insert_after);
 
-      create_iv (aggr_ptr_init, PLUS_EXPR,
-		 fold_convert (aggr_ptr_type, iv_step),
+      create_iv (aggr_ptr_init, fold_convert (aggr_ptr_type, iv_step),
 		 aggr_ptr, loop, &incr_gsi, insert_after,
 		 &indx_before_incr, &indx_after_incr);
       incr = gsi_stmt (incr_gsi);
@@ -5592,7 +5577,7 @@ vect_create_data_ref_ptr (vec_info *vinfo, stmt_vec_info stmt_info,
     {
       standard_iv_increment_position (containing_loop, &incr_gsi,
 				      &insert_after);
-      create_iv (aptr, PLUS_EXPR, fold_convert (aggr_ptr_type, DR_STEP (dr)),
+      create_iv (aptr, fold_convert (aggr_ptr_type, DR_STEP (dr)),
 		 aggr_ptr, containing_loop, &incr_gsi, insert_after,
 		 &indx_before_incr, &indx_after_incr);
       incr = gsi_stmt (incr_gsi);
@@ -5825,7 +5810,7 @@ vect_grouped_store_supported (tree vectype, unsigned HOST_WIDE_INT count)
 		    sel[3 * i + nelt2] = 0;
 		}
 	      indices.new_vector (sel, 2, nelt);
-	      if (!can_vec_perm_const_p (mode, mode, indices))
+	      if (!can_vec_perm_const_p (mode, indices))
 		{
 		  if (dump_enabled_p ())
 		    dump_printf (MSG_MISSED_OPTIMIZATION,
@@ -5843,7 +5828,7 @@ vect_grouped_store_supported (tree vectype, unsigned HOST_WIDE_INT count)
 		    sel[3 * i + nelt2] = nelt + j2++;
 		}
 	      indices.new_vector (sel, 2, nelt);
-	      if (!can_vec_perm_const_p (mode, mode, indices))
+	      if (!can_vec_perm_const_p (mode, indices))
 		{
 		  if (dump_enabled_p ())
 		    dump_printf (MSG_MISSED_OPTIMIZATION,
@@ -5870,12 +5855,12 @@ vect_grouped_store_supported (tree vectype, unsigned HOST_WIDE_INT count)
 	      sel[i * 2 + 1] = i + nelt;
 	    }
 	  vec_perm_indices indices (sel, 2, nelt);
-	  if (can_vec_perm_const_p (mode, mode, indices))
+	  if (can_vec_perm_const_p (mode, indices))
 	    {
 	      for (i = 0; i < 6; i++)
 		sel[i] += exact_div (nelt, 2);
 	      indices.new_vector (sel, 2, nelt);
-	      if (can_vec_perm_const_p (mode, mode, indices))
+	      if (can_vec_perm_const_p (mode, indices))
 		return true;
 	    }
 	}
@@ -5890,28 +5875,24 @@ vect_grouped_store_supported (tree vectype, unsigned HOST_WIDE_INT count)
 /* Return FN if vec_{mask_,mask_len_}store_lanes is available for COUNT vectors
    of type VECTYPE.  MASKED_P says whether the masked form is needed.  */
 
-internal_fn
+bool
 vect_store_lanes_supported (tree vectype, unsigned HOST_WIDE_INT count,
 			    bool masked_p)
 {
-  if (vect_lanes_optab_supported_p ("vec_mask_len_store_lanes",
-				    vec_mask_len_store_lanes_optab, vectype,
-				    count))
-    return IFN_MASK_LEN_STORE_LANES;
-  else if (masked_p)
+  if (masked_p)
     {
       if (vect_lanes_optab_supported_p ("vec_mask_store_lanes",
 					vec_mask_store_lanes_optab, vectype,
 					count))
-	return IFN_MASK_STORE_LANES;
+	return true;
     }
   else
     {
       if (vect_lanes_optab_supported_p ("vec_store_lanes",
 					vec_store_lanes_optab, vectype, count))
-	return IFN_STORE_LANES;
+	return true;
     }
-  return IFN_LAST;
+  return false;
 }
 
 
@@ -6460,7 +6441,7 @@ vect_grouped_load_supported (tree vectype, bool single_element_p,
 		else
 		  sel[i] = 0;
 	      indices.new_vector (sel, 2, nelt);
-	      if (!can_vec_perm_const_p (mode, mode, indices))
+	      if (!can_vec_perm_const_p (mode, indices))
 		{
 		  if (dump_enabled_p ())
 		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6474,7 +6455,7 @@ vect_grouped_load_supported (tree vectype, bool single_element_p,
 		else
 		  sel[i] = nelt + ((nelt + k) % 3) + 3 * (j++);
 	      indices.new_vector (sel, 2, nelt);
-	      if (!can_vec_perm_const_p (mode, mode, indices))
+	      if (!can_vec_perm_const_p (mode, indices))
 		{
 		  if (dump_enabled_p ())
 		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6497,12 +6478,12 @@ vect_grouped_load_supported (tree vectype, bool single_element_p,
 	  for (i = 0; i < 3; i++)
 	    sel[i] = i * 2;
 	  vec_perm_indices indices (sel, 2, nelt);
-	  if (can_vec_perm_const_p (mode, mode, indices))
+	  if (can_vec_perm_const_p (mode, indices))
 	    {
 	      for (i = 0; i < 3; i++)
 		sel[i] = i * 2 + 1;
 	      indices.new_vector (sel, 2, nelt);
-	      if (can_vec_perm_const_p (mode, mode, indices))
+	      if (can_vec_perm_const_p (mode, indices))
 		return true;
 	    }
         }
@@ -6519,28 +6500,24 @@ vect_grouped_load_supported (tree vectype, bool single_element_p,
    If it is available and ELSVALS is nonzero store the possible else values
    in the vector it points to.  */
 
-internal_fn
+bool
 vect_load_lanes_supported (tree vectype, unsigned HOST_WIDE_INT count,
 			   bool masked_p, vec<int> *elsvals)
 {
-  if (vect_lanes_optab_supported_p ("vec_mask_len_load_lanes",
-				    vec_mask_len_load_lanes_optab, vectype,
-				    count, elsvals))
-    return IFN_MASK_LEN_LOAD_LANES;
-  else if (masked_p)
+  if (masked_p)
     {
       if (vect_lanes_optab_supported_p ("vec_mask_load_lanes",
 					vec_mask_load_lanes_optab, vectype,
 					count, elsvals))
-	return IFN_MASK_LOAD_LANES;
+	return true;
     }
   else
     {
       if (vect_lanes_optab_supported_p ("vec_load_lanes", vec_load_lanes_optab,
 					vectype, count, elsvals))
-	return IFN_LOAD_LANES;
+	return true;
     }
-  return IFN_LAST;
+  return false;
 }
 
 /* Function vect_permute_load_chain.
@@ -6861,7 +6838,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt / 2; ++i)
 	sel[nelt / 2 + i] = i * 2 + 1;
       vec_perm_indices indices (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6876,7 +6853,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt / 2; ++i)
 	sel[nelt / 2 + i] = i * 2;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6891,7 +6868,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt; i++)
 	sel[i] = nelt / 2 + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6907,7 +6884,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = nelt / 2; i < nelt; i++)
 	sel[i] = nelt + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6971,7 +6948,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
 	  k++;
 	}
       vec_perm_indices indices (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -6986,7 +6963,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt; i++)
 	sel[i] = 2 * (nelt / 3) + (nelt % 3) + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -7000,7 +6977,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt; i++)
 	sel[i] = 2 * (nelt / 3) + 1 + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -7014,7 +6991,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt; i++)
 	sel[i] = (nelt / 3) + (nelt % 3) / 2 + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -7028,7 +7005,7 @@ vect_shift_permute_load_chain (vec_info *vinfo, vec<tree> dr_chain,
       for (i = 0; i < nelt; i++)
 	sel[i] = 2 * (nelt / 3) + (nelt % 3) / 2 + i;
       indices.new_vector (sel, 2, nelt);
-      if (!can_vec_perm_const_p (vmode, vmode, indices))
+      if (!can_vec_perm_const_p (vmode, indices))
 	{
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -7293,7 +7270,7 @@ vect_supportable_dr_alignment (vec_info *vinfo, dr_vec_info *dr_info,
 
   if (DR_IS_READ (dr))
     {
-      if (can_implement_p (vec_realign_load_optab, mode)
+      if (optab_handler (vec_realign_load_optab, mode) != CODE_FOR_nothing
 	  && (!targetm.vectorize.builtin_mask_for_load
 	      || targetm.vectorize.builtin_mask_for_load ()))
 	{

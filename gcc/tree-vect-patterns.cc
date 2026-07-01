@@ -676,7 +676,7 @@ vect_widened_op_tree (vec_info *vinfo, stmt_vec_info stmt_info, tree_code code,
    is NULL, the caller must set SSA_NAME_DEF_STMT for the returned SSA var. */
 
 static tree
-vect_recog_temp_ssa_var (tree type, gimple *stmt)
+vect_recog_temp_ssa_var (tree type, gimple *stmt = NULL)
 {
   return make_temp_ssa_name (type, stmt, "patt");
 }

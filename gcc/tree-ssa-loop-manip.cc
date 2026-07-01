@@ -246,8 +246,11 @@ compute_live_loop_exits (bitmap live_exits, bitmap use_blocks,
 	  unsigned pred_loop_depth = loop_depth (pred_loop);
 	  bool pred_visited;
 
-	  /* We should have met DEF_BB along the way.  */
-	  gcc_assert (pred != ENTRY_BLOCK_PTR_FOR_FN (cfun));
+	  /* We should have met DEF_BB along the way.  During vectorizer CFG
+	     surgery with multiple exits we can see transient paths back to
+	     entry; they are not loop exits that need LC PHIs.  */
+	  if (pred == ENTRY_BLOCK_PTR_FOR_FN (cfun))
+	    continue;
 
 	  if (pred_loop_depth >= def_loop_depth)
 	    {

@@ -6957,7 +6957,7 @@ vect_slp_analyze_node_operations_1 (vec_info *vinfo, slp_tree node,
 	{
 	  if (STMT_VINFO_LIVE_P (slp_stmt_info)
 	      && !vectorizable_live_operation (vinfo,
-					       slp_stmt_info, NULL, node,
+					       slp_stmt_info, node,
 					       node_instance, i,
 					       false, cost_vec))
 	    return false;
@@ -7274,7 +7274,7 @@ vect_bb_slp_mark_live_stmts (bb_vec_info bb_vinfo, slp_tree node,
 		  {
 		    STMT_VINFO_LIVE_P (stmt_info) = true;
 		    if (vectorizable_live_operation (bb_vinfo, stmt_info,
-						     NULL, node, instance, i,
+						     node, instance, i,
 						     false, cost_vec))
 		      /* ???  So we know we can vectorize the live stmt
 			 from one SLP node.  If we cannot do so from all
@@ -10267,7 +10267,7 @@ vect_schedule_slp_node (vec_info *vinfo,
 	if (STMT_VINFO_LIVE_P (slp_stmt_info))
 	  {
 	    done = vectorizable_live_operation (vinfo,
-						slp_stmt_info, &si, node,
+						slp_stmt_info, node,
 						instance, i, true, NULL);
 	    gcc_assert (done);
 	  }
