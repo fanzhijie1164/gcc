@@ -67,3 +67,5 @@ stamp-*
 /mpc*
 /gmp*
 /isl*
+build_cross_release_12/
+gcc12_cross_release/

@@ -109,5 +109,4 @@ env CFLAGS="-O2" CXXFLAGS="-O2" \
 
 make -j"$MAKE_JOBS" 2>&1 | tee build.log
 make install 2>&1 | tee install.log
-
 "$INSTALL_DIR/bin/${TARGET}-gcc" -v
