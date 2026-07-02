@@ -8478,6 +8478,10 @@ vectorizable_induction (loop_vec_info loop_vinfo,
        [i2 + 2*S2, i0 + 3*S0, i1 + 3*S1, i2 + 3*S2].  */
   if (slp_node)
     {
+      gimple_stmt_iterator incr_si;
+      bool insert_after;
+      standard_iv_increment_position (iv_loop, &incr_si, &insert_after);
+
       /* Enforced above.  */
       unsigned int const_nunits = nunits.to_constant ();
 
@@ -8598,7 +8602,10 @@ vectorizable_induction (loop_vec_info loop_vinfo,
 	  vec_def = gimple_build (&stmts,
 				  PLUS_EXPR, step_vectype, vec_def, up);
 	  vec_def = gimple_convert (&stmts, vectype, vec_def);
-	  gsi_insert_seq_before (&si, stmts, GSI_SAME_STMT);
+	  if (insert_after)
+	    gsi_insert_seq_after (&incr_si, stmts, GSI_NEW_STMT);
+	  else
+	    gsi_insert_seq_before (&incr_si, stmts, GSI_SAME_STMT);
 	  add_phi_arg (induction_phi, vec_def, loop_latch_edge (iv_loop),
 		       UNKNOWN_LOCATION);
 
@@ -8619,6 +8626,7 @@ vectorizable_induction (loop_vec_info loop_vinfo,
 	  add_phi_arg (induction_phi, vec_init, pe, UNKNOWN_LOCATION);
 
 	  SLP_TREE_VEC_STMTS (slp_node).quick_push (induction_phi);
+	  SLP_TREE_VEC_DEFS (slp_node).safe_push (PHI_RESULT (induction_phi));
 	}
       if (!nested_in_vect_loop)
 	{
@@ -8630,6 +8638,8 @@ vectorizable_induction (loop_vec_info loop_vinfo,
 	    {
 	      SLP_TREE_VEC_STMTS (slp_node)
 		.quick_push (SLP_TREE_VEC_STMTS (slp_node)[0]);
+	      SLP_TREE_VEC_DEFS (slp_node)
+		.safe_push (SLP_TREE_VEC_DEFS (slp_node)[0]);
 	      vec_steps.quick_push (vec_steps[0]);
 	    }
 	}
@@ -8668,6 +8678,7 @@ vectorizable_induction (loop_vec_info loop_vinfo,
 		}
 	      SLP_TREE_VEC_STMTS (slp_node)
 		.quick_push (SSA_NAME_DEF_STMT (def));
+	      SLP_TREE_VEC_DEFS (slp_node).safe_push (def);
 	    }
 	}
 
@@ -8927,6 +8938,21 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
 			       tree lhs_type, bool restart_loop,
 			       gimple_stmt_iterator *exit_gsi)
 {
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def
+      && exit_bb == LOOP_VINFO_LOOP (loop_vinfo)->header)
+    {
+      basic_block normal_dest = LOOP_VINFO_EARLY_BRK_DEST_BB (loop_vinfo);
+      edge e;
+      edge_iterator ei;
+      FOR_EACH_EDGE (e, ei, exit_bb->succs)
+	if (e->dest != normal_dest)
+	  {
+	    exit_bb = e->dest;
+	    break;
+	  }
+    }
+
   gcc_assert (single_pred_p (exit_bb) || LOOP_VINFO_EARLY_BREAKS (loop_vinfo));
 
   tree vec_lhs_phi = copy_ssa_name (vec_lhs);
