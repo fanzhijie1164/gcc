@@ -1325,6 +1325,8 @@ ssa_undefined_value_p (tree t, bool partial)
 
   /* The value is undefined iff its definition statement is empty.  */
   def_stmt = SSA_NAME_DEF_STMT (t);
+  if (!def_stmt)
+    return true;
   if (gimple_nop_p (def_stmt))
     return true;
 
