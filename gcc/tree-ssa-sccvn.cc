@@ -8139,8 +8139,22 @@ process_bb (rpo_elim &avail, basic_block bb,
 	       decides if the stmt can be removed and availability at the
 	       use site.  The SSA property ensures that things available
 	       at the definition are also available at uses.  */
-	    sprime = avail.eliminate_avail (gimple_bb (SSA_NAME_DEF_STMT (arg)),
-					    arg);
+	    {
+	      gimple *def_stmt = SSA_NAME_DEF_STMT (arg);
+	      if (!def_stmt)
+		{
+		  if (dump_file)
+		    {
+		      fprintf (dump_file, "Skipping PHI argument with no "
+			       "definition statement: ");
+		      print_generic_expr (dump_file, arg);
+		      fprintf (dump_file, " in ");
+		      print_gimple_stmt (dump_file, phi, 0);
+		    }
+		  continue;
+		}
+	      sprime = avail.eliminate_avail (gimple_bb (def_stmt), arg);
+	    }
 	  if (sprime
 	      && sprime != arg
 	      && may_propagate_copy (arg, sprime))
