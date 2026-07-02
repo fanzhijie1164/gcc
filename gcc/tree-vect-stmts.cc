@@ -11107,7 +11107,7 @@ vectorizable_comparison (vec_info *vinfo,
 /* Check to see if the current early break given in STMT_INFO is valid for
    vectorization.  */
 
-static bool
+bool
 vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 			 gimple_stmt_iterator *gsi, gimple **vec_stmt,
 			 slp_tree slp_node, stmt_vector_for_cost *cost_vec)
@@ -11131,8 +11131,13 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
   slp_tree slp_op0;
   tree op0;
   enum vect_def_type dt0;
-  if (!vect_is_simple_use (vinfo, stmt_info, slp_node, 0, &op0, &slp_op0, &dt0,
-			   &vectype))
+
+  /* Early break gcond SLP roots can have no children, for example when
+     their argument is external.  In that case there is no operand use to
+     analyze from the root.  */
+  if ((!slp_node || !SLP_TREE_CHILDREN (slp_node).is_empty ())
+      && !vect_is_simple_use (vinfo, stmt_info, slp_node, 0, &op0, &slp_op0,
+			      &dt0, &vectype))
     {
       if (dump_enabled_p ())
 	  dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -11140,16 +11145,25 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 	return false;
     }
 
+  if (slp_node)
+    vectype = SLP_TREE_VECTYPE (slp_node);
+
   if (!vectype)
     return false;
 
   machine_mode mode = TYPE_MODE (vectype);
-  int ncopies;
+  int ncopies, vec_num;
 
   if (slp_node)
-    ncopies = 1;
+    {
+      ncopies = 1;
+      vec_num = SLP_TREE_NUMBER_OF_VEC_STMTS (slp_node);
+    }
   else
-    ncopies = vect_get_num_copies (loop_vinfo, vectype);
+    {
+      ncopies = vect_get_num_copies (loop_vinfo, vectype);
+      vec_num = 1;
+    }
 
   vec_loop_masks *masks = &LOOP_VINFO_MASKS (loop_vinfo);
   bool masked_loop_p = LOOP_VINFO_FULLY_MASKED_P (loop_vinfo);
@@ -11207,7 +11221,8 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
 
       if (LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo))
 	{
-	  vect_record_loop_mask (loop_vinfo, masks, ncopies, vectype, NULL);
+	  vect_record_loop_mask (loop_vinfo, masks, ncopies * vec_num,
+				 vectype, NULL);
 	}
 
 
@@ -11222,9 +11237,12 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
   if (dump_enabled_p ())
     dump_printf_loc (MSG_NOTE, vect_location, "transform early-exit.\n");
 
-  if (!vectorizable_comparison_1 (vinfo, vectype, stmt_info, code, gsi,
-				  vec_stmt, slp_node, cost_vec))
-    gcc_unreachable ();
+  if (!slp_node)
+    {
+      if (!vectorizable_comparison_1 (vinfo, vectype, stmt_info, code, gsi,
+				      vec_stmt, slp_node, cost_vec))
+	gcc_unreachable ();
+    }
 
   gimple *stmt = STMT_VINFO_STMT (stmt_info);
   basic_block cond_bb = gimple_bb (stmt);
@@ -11233,7 +11251,7 @@ vectorizable_early_exit (vec_info *vinfo, stmt_vec_info stmt_info,
   auto_vec<tree> stmts;
 
   if (slp_node)
-    stmts.safe_splice (SLP_TREE_VEC_DEFS (slp_node));
+    vect_get_slp_defs (slp_node, &stmts);
   else
     {
       auto vec_stmts = STMT_VINFO_VEC_STMTS (stmt_info);

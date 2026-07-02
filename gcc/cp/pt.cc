@@ -18886,8 +18886,11 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 	  }
 	else
 	  {
-	    unsigned short unroll = (RANGE_FOR_UNROLL (t)
-				     ? tree_to_uhwi (RANGE_FOR_UNROLL (t)) : 0);
+	    tree unroll = RECUR (RANGE_FOR_UNROLL (t));
+	    if (unroll)
+	      unroll
+		= cp_check_pragma_unroll (EXPR_LOCATION (RANGE_FOR_UNROLL (t)),
+					  unroll);
 	    stmt = cp_convert_range_for (stmt, decl, expr,
 					 decomp_first, decomp_cnt,
 					 RANGE_FOR_IVDEP (t), unroll);
@@ -21567,11 +21570,19 @@ tsubst_copy_and_build (tree t,
       RETURN (t);
 
     case ANNOTATE_EXPR:
-      op1 = RECUR (TREE_OPERAND (t, 0));
-      RETURN (build3_loc (EXPR_LOCATION (t), ANNOTATE_EXPR,
-			  TREE_TYPE (op1), op1,
-			  RECUR (TREE_OPERAND (t, 1)),
-			  RECUR (TREE_OPERAND (t, 2))));
+      {
+	tree op1 = RECUR (TREE_OPERAND (t, 0));
+	tree op2 = tsubst_expr (TREE_OPERAND (t, 1), args, complain, in_decl,
+				integral_constant_expression_p);
+	tree op3 = tsubst_expr (TREE_OPERAND (t, 2), args, complain, in_decl,
+				integral_constant_expression_p);
+	if (TREE_CODE (op2) == INTEGER_CST
+	    && wi::to_widest (op2) == (int) annot_expr_unroll_kind)
+	  op3 = cp_check_pragma_unroll (EXPR_LOCATION (TREE_OPERAND (t, 2)),
+					op3);
+	RETURN (build3_loc (EXPR_LOCATION (t), ANNOTATE_EXPR,
+			    TREE_TYPE (op1), op1, op2, op3));
+      }
 
     case NON_LVALUE_EXPR:
     case VIEW_CONVERT_EXPR:

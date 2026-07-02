@@ -231,7 +231,8 @@ enum slp_instance_kind {
     slp_inst_kind_reduc_group,
     slp_inst_kind_reduc_chain,
     slp_inst_kind_bb_reduc,
-    slp_inst_kind_ctor
+    slp_inst_kind_ctor,
+    slp_inst_kind_gcond
 };
 
 /* SLP instance is a sequence of stmts in a loop that can be packed into
@@ -2381,6 +2382,9 @@ extern bool vectorizable_reduction (loop_vec_info, stmt_vec_info,
 extern bool vectorizable_induction (loop_vec_info, stmt_vec_info,
 				    gimple **, slp_tree,
 				    stmt_vector_for_cost *);
+extern bool vectorizable_early_exit (vec_info *, stmt_vec_info,
+				     gimple_stmt_iterator *, gimple **,
+				     slp_tree, stmt_vector_for_cost *);
 extern bool vect_transform_reduction (loop_vec_info, stmt_vec_info,
 				      gimple_stmt_iterator *,
 				      gimple **, slp_tree);
