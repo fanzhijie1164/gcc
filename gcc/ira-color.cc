@@ -2676,7 +2676,9 @@ assign_hard_reg (ira_allocno_t a, bool retry_p)
 	    add_cost = ((ira_memory_move_cost[mode][rclass][0]
 		         + ira_memory_move_cost[mode][rclass][1])
 		        * saved_nregs / hard_regno_nregs (hard_regno,
-							  mode) - 1);
+							  mode) - 1)
+		       * (optimize_size ? 1 :
+			  REG_FREQ_FROM_BB (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
 	    cost += add_cost;
 	    full_cost += add_cost;
 	  }
@@ -3655,8 +3657,9 @@ improve_allocation (void)
   unsigned int i;
   int j, k, n, hregno, conflict_hregno, base_cost, class_size, word, nwords;
   int check, spill_cost, min_cost, nregs, conflict_nregs, r, best;
+  int saved_nregs, add_cost;
   bool try_p;
-  enum reg_class aclass;
+  enum reg_class aclass, rclass;
   machine_mode mode;
   int *allocno_costs;
   int costs[FIRST_PSEUDO_REGISTER];
@@ -3700,6 +3703,7 @@ improve_allocation (void)
 					      conflicting_regs,
 					      &profitable_hard_regs);
       class_size = ira_class_hard_regs_num[aclass];
+      mode = ALLOCNO_MODE (a);
       /* Set up cost improvement for usage of each profitable hard
 	 register for allocno A.  */
       for (j = 0; j < class_size; j++)
@@ -3713,6 +3717,22 @@ improve_allocation (void)
 	  costs[hregno] = (allocno_costs == NULL
 			   ? ALLOCNO_UPDATED_CLASS_COST (a) : allocno_costs[k]);
 	  costs[hregno] -= allocno_copy_cost_saving (a, hregno);
+
+	  if ((saved_nregs = calculate_saved_nregs (hregno, mode)) != 0)
+	    {
+	      /* We need to save/restore the hard register in
+		 epilogue/prologue.  Therefore we increase the cost.
+		 Since the prolog is placed in the entry BB, the frequency
+		 of the entry BB is considered while computing the cost.  */
+	      rclass = REGNO_REG_CLASS (hregno);
+	      add_cost = ((ira_memory_move_cost[mode][rclass][0]
+			   + ira_memory_move_cost[mode][rclass][1])
+			  * saved_nregs / hard_regno_nregs (hregno,
+							    mode) - 1)
+			 * REG_FREQ_FROM_BB (ENTRY_BLOCK_PTR_FOR_FN (cfun));
+	      costs[hregno] += add_cost;
+	    }
+
 	  costs[hregno] -= base_cost;
 	  if (costs[hregno] < 0)
 	    try_p = true;
@@ -3724,7 +3744,6 @@ improve_allocation (void)
 	continue;
       auto_bitmap allocnos_to_spill;
       HARD_REG_SET soft_conflict_regs = {};
-      mode = ALLOCNO_MODE (a);
       nwords = ALLOCNO_NUM_OBJECTS (a);
       /* Process each allocno conflicting with A and update the cost
 	 improvement for profitable hard registers of A.  To use a
