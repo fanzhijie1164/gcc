@@ -1148,7 +1148,7 @@ begin_while_stmt (void)
 
 void
 finish_while_stmt_cond (tree cond, tree while_stmt, bool ivdep,
-			unsigned short unroll)
+			tree unroll)
 {
   cond = maybe_convert_cond (cond);
   finish_cond (&WHILE_COND (while_stmt), cond);
@@ -1166,8 +1166,7 @@ finish_while_stmt_cond (tree cond, tree while_stmt, bool ivdep,
 				      WHILE_COND (while_stmt),
 				      build_int_cst (integer_type_node,
 						     annot_expr_unroll_kind),
-				      build_int_cst (integer_type_node,
-						     unroll));
+				      unroll);
   simplify_loop_decl_cond (&WHILE_COND (while_stmt), WHILE_BODY (while_stmt));
 }
 
@@ -1212,7 +1211,7 @@ finish_do_body (tree do_stmt)
    COND is as indicated.  */
 
 void
-finish_do_stmt (tree cond, tree do_stmt, bool ivdep, unsigned short unroll)
+finish_do_stmt (tree cond, tree do_stmt, bool ivdep, tree unroll)
 {
   cond = maybe_convert_cond (cond);
   end_maybe_infinite_loop (cond);
@@ -1228,7 +1227,7 @@ finish_do_stmt (tree cond, tree do_stmt, bool ivdep, unsigned short unroll)
   if (unroll && cond != error_mark_node)
     cond = build3 (ANNOTATE_EXPR, TREE_TYPE (cond), cond,
 		   build_int_cst (integer_type_node, annot_expr_unroll_kind),
-		   build_int_cst (integer_type_node, unroll));
+		   unroll);
   DO_COND (do_stmt) = cond;
 }
 
@@ -1325,7 +1324,7 @@ finish_init_stmt (tree for_stmt)
    FOR_STMT.  */
 
 void
-finish_for_cond (tree cond, tree for_stmt, bool ivdep, unsigned short unroll)
+finish_for_cond (tree cond, tree for_stmt, bool ivdep, tree unroll)
 {
   cond = maybe_convert_cond (cond);
   finish_cond (&FOR_COND (for_stmt), cond);
@@ -1343,8 +1342,7 @@ finish_for_cond (tree cond, tree for_stmt, bool ivdep, unsigned short unroll)
 				  FOR_COND (for_stmt),
 				  build_int_cst (integer_type_node,
 						 annot_expr_unroll_kind),
-				  build_int_cst (integer_type_node,
-						 unroll));
+				  unroll);
   simplify_loop_decl_cond (&FOR_COND (for_stmt), FOR_BODY (for_stmt));
 }
 
@@ -12716,6 +12714,35 @@ cp_build_bit_cast (location_t loc, tree type, tree arg,
     ret = get_target_expr (ret, complain);
 
   return ret;
+}
+
+/* Diagnose invalid #pragma GCC unroll argument and adjust
+   it if needed.  */
+
+tree
+cp_check_pragma_unroll (location_t loc, tree unroll)
+{
+  HOST_WIDE_INT lunroll = 0;
+  if (type_dependent_expression_p (unroll))
+    ;
+  else if (!INTEGRAL_TYPE_P (TREE_TYPE (unroll))
+	   || (!value_dependent_expression_p (unroll)
+	       && (!tree_fits_shwi_p (unroll)
+		   || (lunroll = tree_to_shwi (unroll)) < 0
+		   || lunroll >= USHRT_MAX)))
+    {
+      error_at (loc, "%<#pragma GCC unroll%> requires an"
+		" assignment-expression that evaluates to a non-negative"
+		" integral constant less than %u", USHRT_MAX);
+      unroll = integer_one_node;
+    }
+  else if (TREE_CODE (unroll) == INTEGER_CST)
+    {
+      unroll = fold_convert (integer_type_node, unroll);
+      if (integer_zerop (unroll))
+	unroll = integer_one_node;
+    }
+  return unroll;
 }
 
 #include "gt-cp-semantics.h"
