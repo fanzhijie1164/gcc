@@ -17361,7 +17361,20 @@ aarch64_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
 
   /* Try to get a more accurate cost by looking at STMT_INFO instead
      of just looking at KIND.  */
-  if (stmt_info && aarch64_use_new_vector_costs_p ())
+  bool use_new_vector_costs_p = aarch64_use_new_vector_costs_p ();
+  /* The old generic AArch64 costs overcount the setup cost for vector
+     induction PHIs.  GCC 15's default costs do not charge the duplicate
+     scalar_to_vec prologue statement here.  */
+  if (stmt_info
+      && m_vec_flags
+      && !use_new_vector_costs_p
+      && kind == scalar_to_vec
+      && where == vect_prologue
+      && count > 1
+      && is_a<gphi *> (stmt_info->stmt))
+    count -= 1;
+
+  if (stmt_info && use_new_vector_costs_p)
     {
       /* If we scalarize a strided store, the vectorizer costs one
 	 vec_to_scalar for each element.  However, we can store the first
@@ -17383,7 +17396,7 @@ aarch64_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
     stmt_cost = aarch64_sve_adjust_stmt_cost (m_vinfo, kind, stmt_info,
 					      vectype, stmt_cost);
 
-  if (stmt_info && aarch64_use_new_vector_costs_p ())
+  if (stmt_info && use_new_vector_costs_p)
     {
       /* Account for any extra "embedded" costs that apply additively
 	 to the base cost calculated above.  */
