@@ -2456,6 +2456,7 @@ assign_hard_reg (ira_allocno_t a, bool retry_p)
   int saved_nregs;
   enum reg_class rclass;
   int add_cost;
+  int caller_save_cost = ira_caller_save_cost (a);
 #ifdef STACK_REGS
   bool no_stack_reg_p;
 #endif
@@ -2673,15 +2674,32 @@ assign_hard_reg (ira_allocno_t a, bool retry_p)
 	     epilogue/prologue.  Therefore we increase the cost.  */
 	  {
 	    rclass = REGNO_REG_CLASS (hard_regno);
-	    add_cost = ((ira_memory_move_cost[mode][rclass][0]
-		         + ira_memory_move_cost[mode][rclass][1])
-		        * saved_nregs / hard_regno_nregs (hard_regno,
-							  mode) - 1)
-		       * (optimize_size ? 1 :
-			  REG_FREQ_FROM_BB (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
+	    int nregs = hard_regno_nregs (hard_regno, mode);
+	    int entry_cost = (ira_memory_move_cost[mode][rclass][0]
+			      * saved_nregs / nregs);
+	    int exit_cost = (ira_memory_move_cost[mode][rclass][1]
+			     * saved_nregs / nregs);
+
+	    /* In the event of a tie between caller-save and callee-save,
+	       prefer callee-save.  Apply this to the entry cost rather than
+	       the exit cost since the entry frequency must be at least as
+	       high as the exit frequency.  */
+	    if (entry_cost > 1)
+	      entry_cost -= 1;
+	    add_cost = entry_cost * (optimize_size ? 1 :
+				     REG_FREQ_FROM_BB
+				       (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
+	    add_cost += exit_cost * (optimize_size ? 1 :
+				     REG_FREQ_FROM_BB
+				       (EXIT_BLOCK_PTR_FOR_FN (cfun)));
 	    cost += add_cost;
 	    full_cost += add_cost;
 	  }
+	}
+      if (ira_need_caller_save_p (a, hard_regno))
+	{
+	  cost += caller_save_cost;
+	  full_cost += caller_save_cost;
 	}
       if (min_cost > cost)
 	min_cost = cost;
