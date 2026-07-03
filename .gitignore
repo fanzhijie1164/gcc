@@ -70,3 +70,5 @@ stamp-*
 /gmp*
 /isl*
 /gettext*
+gcc14_cross_release/
+build_cross_release_14/
