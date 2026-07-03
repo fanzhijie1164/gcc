@@ -3534,33 +3534,41 @@ vect_analyze_slp (vec_info *vinfo, unsigned max_tree_size)
 					&limit, bst_map, NULL))
 	    roots.release ();
 	}
+      /* Find and create SLP instances for inductions that have been forced
+	 live due to early break.  */
+      edge latch_e = loop_latch_edge (LOOP_VINFO_LOOP (loop_vinfo));
+      for (auto stmt_info : LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo))
+	{
+	  vec<stmt_vec_info> stmts;
+	  vec<stmt_vec_info> roots = vNULL;
+	  gphi *phi = as_a<gphi *> (STMT_VINFO_STMT (stmt_info));
+	  tree def = PHI_ARG_DEF_FROM_EDGE (phi, latch_e);
+	  stmt_vec_info lc_info = loop_vinfo->lookup_def (def);
+	  if (lc_info)
+	    {
+	      stmts.create (1);
+	      stmts.quick_push (vect_stmt_to_vectorize (lc_info));
+	      vect_build_slp_instance (vinfo, slp_inst_kind_reduc_group,
+				       stmts, roots, max_tree_size,
+				       &limit, bst_map, NULL);
+	    }
 
-      /* Early-exit vectorization can force the induction PHI live.  Build
-	 a simple SLP instance for such PHIs so the loop is not treated as
-	 mixed SLP/non-SLP only because the IV feeds the vectorized exit.  */
-      if (!LOOP_VINFO_LOOP_CONDS (loop_vinfo).is_empty ())
-	for (gphi_iterator gsi
-	       = gsi_start_phis (LOOP_VINFO_LOOP (loop_vinfo)->header);
-	     !gsi_end_p (gsi); gsi_next (&gsi))
-	  {
-	    stmt_vec_info phi_info = loop_vinfo->lookup_stmt (gsi.phi ());
-	    if (!phi_info
-		|| STMT_VINFO_DEF_TYPE (phi_info) != vect_induction_def)
-	      continue;
-
-	    auto_vec<stmt_vec_info, 1> tem;
-	    tem.quick_push (phi_info);
-	    if (bst_map->get (tem))
-	      continue;
-
-	    vec<stmt_vec_info> stmts;
-	    vec<stmt_vec_info> roots = vNULL;
-	    stmts.create (1);
-	    stmts.quick_push (phi_info);
-	    vect_build_slp_instance (vinfo, slp_inst_kind_reduc_group,
-				     stmts, roots, max_tree_size,
-				     &limit, bst_map, NULL);
-	  }
+	  /* When the latch def is from a different cycle this can only
+	     be an induction.  Build a simple instance for this.
+	     ???  We should be able to start discovery from the PHI
+	     for all inductions, but then there will be stray
+	     non-SLP stmts we choke on as needing non-SLP handling.  */
+	  auto_vec<stmt_vec_info, 1> tem;
+	  tem.quick_push (stmt_info);
+	  if (!bst_map->get (tem))
+	    {
+	      stmts.create (1);
+	      stmts.quick_push (stmt_info);
+	      vect_build_slp_instance (vinfo, slp_inst_kind_reduc_group,
+				       stmts, roots, max_tree_size,
+				       &limit, bst_map, NULL);
+	    }
+	}
     }
 
   hash_set<slp_tree> visited_patterns;

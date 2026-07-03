@@ -903,6 +903,10 @@ public:
   /* Statements whose VUSES need updating if early break vectorization is to
      happen.  */
   auto_vec<gimple*> early_break_vuses;
+
+  /* Record statements that are needed to be live for early break vectorization
+     but may not have an LC PHI node materialized yet in the exits.  */
+  auto_vec<stmt_vec_info> early_break_live_ivs;
 } *loop_vec_info;
 
 /* Access Functions.  */
@@ -960,6 +964,8 @@ public:
 #define LOOP_VINFO_EARLY_BRK_STORES(L)     (L)->early_break_stores
 #define LOOP_VINFO_EARLY_BREAKS_VECT_PEELED(L)  \
   (single_pred ((L)->loop->latch) != (L)->vec_loop_iv_exit->src)
+#define LOOP_VINFO_EARLY_BREAKS_LIVE_IVS(L)  \
+  (L)->early_break_live_ivs
 #define LOOP_VINFO_EARLY_BRK_DEST_BB(L)    (L)->early_break_dest_bb
 #define LOOP_VINFO_EARLY_BRK_VUSES(L)      (L)->early_break_vuses
 #define LOOP_VINFO_LOOP_CONDS(L)           (L)->conds

@@ -3228,14 +3228,17 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
      either already found the loop's SIMDLEN or there was no SIMDLEN to
      begin with.
      TODO: Enable epilogue vectorization for loops with SIMDUID set.  */
+
   bool vect_epilogues = (!simdlen
-			 && loop->inner == NULL
-			 && param_vect_epilogues_nomask
-			 && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
-			   /* No code motion support for multiple epilogues so for now
-			      not supported when multiple exits.  */
-			 && !LOOP_VINFO_EARLY_BREAKS (first_loop_vinfo)
-			 && !loop->simduid);
+                         && loop->inner == NULL
+                         && param_vect_epilogues_nomask
+                         && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
+                           /* No code motion support for multiple epilogues so for now
+                              not supported when multiple exits.  */
+                         && !LOOP_VINFO_EARLY_BREAKS (first_loop_vinfo)
+                         && !loop->simduid
+                         && loop_cost_model (loop) > VECT_COST_MODEL_VERY_CHEAP);
+
   if (!vect_epilogues)
     return first_loop_vinfo;
 
