@@ -2389,6 +2389,16 @@ vect_loop_has_conditional_operation_p (loop_vec_info loop_vinfo)
   return false;
 }
 
+static bool
+vect_gcc12_x86_correctness_guard_p ()
+{
+#ifdef I386_OPTS_H
+  return true;
+#else
+  return false;
+#endif
+}
+
 static opt_result
 vect_analyze_loop_2 (loop_vec_info loop_vinfo, bool &fatal,
 		     unsigned *suggested_unroll_factor)
@@ -3245,7 +3255,8 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 		     "***** Choosing vector mode %s\n",
 		     GET_MODE_NAME (first_loop_vinfo->vector_mode));
 
-  if (vect_loop_has_conditional_operation_p (first_loop_vinfo))
+  if (vect_gcc12_x86_correctness_guard_p ()
+      && vect_loop_has_conditional_operation_p (first_loop_vinfo))
     return opt_loop_vec_info::failure_at
       (vect_location,
        "not vectorized: conditional loop vectorization disabled for "
@@ -3256,7 +3267,15 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
      either already found the loop's SIMDLEN or there was no SIMDLEN to
      begin with.
      TODO: Enable epilogue vectorization for loops with SIMDUID set.  */
-  bool vect_epilogues = false;
+  bool vect_epilogues = (!vect_gcc12_x86_correctness_guard_p ()
+			 && !simdlen
+			 && loop->inner == NULL
+			 && param_vect_epilogues_nomask
+			 && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
+			   /* No code motion support for multiple epilogues so for now
+			      not supported when multiple exits.  */
+			 && !LOOP_VINFO_EARLY_BREAKS (first_loop_vinfo)
+			 && !loop->simduid);
   if (!vect_epilogues)
     return first_loop_vinfo;
 
