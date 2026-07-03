@@ -2367,6 +2367,28 @@ vect_determine_partial_vectors_and_peeling (loop_vec_info loop_vinfo,
    Apply a set of analyses on LOOP, and create a loop_vec_info struct
    for it.  The different analyses will record information in the
    loop_vec_info struct.  */
+static bool
+vect_loop_has_conditional_operation_p (loop_vec_info loop_vinfo)
+{
+  basic_block *bbs = LOOP_VINFO_BBS (loop_vinfo);
+  unsigned int nbbs = LOOP_VINFO_LOOP (loop_vinfo)->num_nodes;
+
+  for (unsigned int i = 0; i < nbbs; ++i)
+    for (gimple_stmt_iterator gsi = gsi_start_bb (bbs[i]);
+	 !gsi_end_p (gsi); gsi_next (&gsi))
+      {
+	gimple *stmt = gsi_stmt (gsi);
+	if (gimple_code (stmt) == GIMPLE_COND)
+	  return true;
+
+	gassign *assign = dyn_cast <gassign *> (stmt);
+	if (assign && gimple_assign_rhs_code (assign) == COND_EXPR)
+	  return true;
+      }
+
+  return false;
+}
+
 static opt_result
 vect_analyze_loop_2 (loop_vec_info loop_vinfo, bool &fatal,
 		     unsigned *suggested_unroll_factor)
@@ -3223,19 +3245,18 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 		     "***** Choosing vector mode %s\n",
 		     GET_MODE_NAME (first_loop_vinfo->vector_mode));
 
+  if (vect_loop_has_conditional_operation_p (first_loop_vinfo))
+    return opt_loop_vec_info::failure_at
+      (vect_location,
+       "not vectorized: conditional loop vectorization disabled for "
+       "GCC 12 x86 correctness.\n");
+
   /* Only vectorize epilogues if PARAM_VECT_EPILOGUES_NOMASK is
      enabled, SIMDUID is not set, it is the innermost loop and we have
      either already found the loop's SIMDLEN or there was no SIMDLEN to
      begin with.
      TODO: Enable epilogue vectorization for loops with SIMDUID set.  */
-  bool vect_epilogues = (!simdlen
-			 && loop->inner == NULL
-			 && param_vect_epilogues_nomask
-			 && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
-			   /* No code motion support for multiple epilogues so for now
-			      not supported when multiple exits.  */
-			 && !LOOP_VINFO_EARLY_BREAKS (first_loop_vinfo)
-			 && !loop->simduid);
+  bool vect_epilogues = false;
   if (!vect_epilogues)
     return first_loop_vinfo;
 

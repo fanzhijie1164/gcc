@@ -398,6 +398,7 @@ vect_stmt_relevant_p (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
 	dump_printf_loc (MSG_NOTE, vect_location,
 			 "vec_stmt_relevant_p: PHI forced live for "
 			 "early break.\n");
+      LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo).safe_push (stmt_info);
       *live_p = true;
     }
 
