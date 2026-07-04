@@ -951,7 +951,8 @@ _loop_vec_info::_loop_vec_info (class loop *loop_in, vec_info_shared *shared)
     has_mask_store (false),
     scalar_loop_scaling (profile_probability::uninitialized ()),
     scalar_loop (NULL),
-    orig_loop_info (NULL)
+    orig_loop_info (NULL),
+    drs_advanced_by (NULL_TREE)
 {
   /* CHECKME: We want to visit all BBs before their successors (except for
      latch blocks, for which this assertion wouldn't hold).  In the simple
@@ -2367,38 +2368,6 @@ vect_determine_partial_vectors_and_peeling (loop_vec_info loop_vinfo,
    Apply a set of analyses on LOOP, and create a loop_vec_info struct
    for it.  The different analyses will record information in the
    loop_vec_info struct.  */
-static bool
-vect_loop_has_conditional_operation_p (loop_vec_info loop_vinfo)
-{
-  basic_block *bbs = LOOP_VINFO_BBS (loop_vinfo);
-  unsigned int nbbs = LOOP_VINFO_LOOP (loop_vinfo)->num_nodes;
-
-  for (unsigned int i = 0; i < nbbs; ++i)
-    for (gimple_stmt_iterator gsi = gsi_start_bb (bbs[i]);
-	 !gsi_end_p (gsi); gsi_next (&gsi))
-      {
-	gimple *stmt = gsi_stmt (gsi);
-	if (gimple_code (stmt) == GIMPLE_COND)
-	  return true;
-
-	gassign *assign = dyn_cast <gassign *> (stmt);
-	if (assign && gimple_assign_rhs_code (assign) == COND_EXPR)
-	  return true;
-      }
-
-  return false;
-}
-
-static bool
-vect_gcc12_x86_correctness_guard_p ()
-{
-#ifdef I386_OPTS_H
-  return true;
-#else
-  return false;
-#endif
-}
-
 static opt_result
 vect_analyze_loop_2 (loop_vec_info loop_vinfo, bool &fatal,
 		     unsigned *suggested_unroll_factor)
@@ -3255,27 +3224,20 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 		     "***** Choosing vector mode %s\n",
 		     GET_MODE_NAME (first_loop_vinfo->vector_mode));
 
-  if (vect_gcc12_x86_correctness_guard_p ()
-      && vect_loop_has_conditional_operation_p (first_loop_vinfo))
-    return opt_loop_vec_info::failure_at
-      (vect_location,
-       "not vectorized: conditional loop vectorization disabled for "
-       "GCC 12 x86 correctness.\n");
-
   /* Only vectorize epilogues if PARAM_VECT_EPILOGUES_NOMASK is
      enabled, SIMDUID is not set, it is the innermost loop and we have
      either already found the loop's SIMDLEN or there was no SIMDLEN to
      begin with.
      TODO: Enable epilogue vectorization for loops with SIMDUID set.  */
-  bool vect_epilogues = (!vect_gcc12_x86_correctness_guard_p ()
-			 && !simdlen
+  bool vect_epilogues = (!simdlen
 			 && loop->inner == NULL
 			 && param_vect_epilogues_nomask
 			 && LOOP_VINFO_PEELING_FOR_NITER (first_loop_vinfo)
 			   /* No code motion support for multiple epilogues so for now
 			      not supported when multiple exits.  */
 			 && !LOOP_VINFO_EARLY_BREAKS (first_loop_vinfo)
-			 && !loop->simduid);
+			 && !loop->simduid
+			 && loop_cost_model (loop) > VECT_COST_MODEL_VERY_CHEAP);
   if (!vect_epilogues)
     return first_loop_vinfo;
 
@@ -9934,11 +9896,6 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
   free (LOOP_VINFO_BBS (epilogue_vinfo));
   LOOP_VINFO_BBS (epilogue_vinfo) = epilogue_bbs;
 
-  /* Advance data_reference's with the number of iterations of the previous
-     loop and its prologue.  */
-  vect_update_inits_of_drs (epilogue_vinfo, advance, PLUS_EXPR);
-
-
   /* The EPILOGUE loop is a copy of the original loop so they share the same
      gimple UIDs.  In this loop we update the loop_vec_info of the EPILOGUE to
      point to the copied statements.  We also create a mapping of all LHS' in
@@ -10044,10 +10001,17 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
       /* Data references for gather loads and scatter stores do not use the
 	 updated offset we set using ADVANCE.  Instead we have to make sure the
 	 reference in the data references point to the corresponding copy of
-	 the original in the epilogue.  */
-      if (STMT_VINFO_MEMORY_ACCESS_TYPE (vect_stmt_to_vectorize (stmt_vinfo))
-	  == VMAT_GATHER_SCATTER)
+	 the original in the epilogue.  Make sure to update both
+	 gather/scatters recognized by dataref analysis and also other
+	 refs that get_load_store_type classified as VMAT_GATHER_SCATTER.  */
+      auto vstmt_vinfo = vect_stmt_to_vectorize (stmt_vinfo);
+      if (STMT_VINFO_MEMORY_ACCESS_TYPE (vstmt_vinfo) == VMAT_GATHER_SCATTER
+	  || STMT_VINFO_STRIDED_P (vstmt_vinfo)
+	  || STMT_VINFO_GATHER_SCATTER_P (vstmt_vinfo))
 	{
+	  /* ???  As we copy epilogues from the main loop incremental
+	     replacement from an already replaced DR_REF from vectorizing
+	     the first epilogue will fail.  */
 	  DR_REF (dr)
 	    = simplify_replace_tree (DR_REF (dr), NULL_TREE, NULL_TREE,
 				     &find_in_mapping, &mapping);
@@ -10058,6 +10022,13 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
       DR_STMT (dr) = STMT_VINFO_STMT (stmt_vinfo);
       stmt_vinfo->dr_aux.stmt = stmt_vinfo;
     }
+
+  /* Advance data_reference's with the number of iterations of the previous
+     loop and its prologue.  */
+  vect_update_inits_of_drs (epilogue_vinfo, advance, PLUS_EXPR);
+
+  /* Remember the advancement made.  */
+  LOOP_VINFO_DRS_ADVANCED_BY (epilogue_vinfo) = advance;
 
   epilogue_vinfo->shared->datarefs_copy.release ();
   epilogue_vinfo->shared->save_datarefs ();
@@ -10542,6 +10513,11 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 
   if (epilogue)
     {
+      /* Accumulate past advancements made.  */
+      if (LOOP_VINFO_DRS_ADVANCED_BY (loop_vinfo))
+	advance = fold_build2 (PLUS_EXPR, TREE_TYPE (advance),
+			       LOOP_VINFO_DRS_ADVANCED_BY (loop_vinfo),
+			       advance);
       update_epilogue_loop_vinfo (epilogue, advance);
 
       epilogue->simduid = loop->simduid;

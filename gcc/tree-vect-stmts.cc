@@ -4286,6 +4286,20 @@ vectorizable_simd_clone_call (vec_info *vinfo, stmt_vec_info stmt_info,
      needs to be generated.  */
   gcc_assert (ncopies >= 1);
 
+  /* When the original call is pure or const but the SIMD ABI dictates
+     an aggregate return we will have to use a virtual definition and
+     in a loop eventually even need to add a virtual PHI.  That's
+     not straight-forward so allow to fix this up via renaming.  */
+  if (gimple_call_lhs (stmt)
+      && !gimple_vdef (stmt)
+      && TREE_CODE (TREE_TYPE (TREE_TYPE (bestn->decl))) == ARRAY_TYPE)
+    vinfo->any_known_not_updated_vssa = true;
+  /* ???  For SLP code-gen we end up inserting after the last
+     vector argument def rather than at the original call position
+     so automagic virtual operand updating doesn't work.  */
+  if (gimple_vuse (stmt) && slp_node)
+    vinfo->any_known_not_updated_vssa = true;
+
   if (!vec_stmt) /* transformation not required.  */
     {
       STMT_VINFO_SIMD_CLONE_INFO (stmt_info).safe_push (bestn->decl);
@@ -8256,6 +8270,9 @@ vectorizable_store (vec_info *vinfo,
 					  memory_access_type);
     }
 
+  if (memory_access_type == VMAT_LOAD_STORE_LANES)
+    vinfo->any_known_not_updated_vssa = true;
+
   if (mask)
     LOOP_VINFO_HAS_MASK_STORE (loop_vinfo) = true;
 
@@ -10468,7 +10485,9 @@ vectorizable_condition (vec_info *vinfo,
   masked = !COMPARISON_CLASS_P (cond_expr);
   vec_cmp_type = truth_type_for (comp_vectype);
 
-  if (vec_cmp_type == NULL_TREE)
+  if (vec_cmp_type == NULL_TREE
+      || maybe_ne (TYPE_VECTOR_SUBPARTS (vectype),
+		   TYPE_VECTOR_SUBPARTS (vec_cmp_type)))
     return false;
 
   cond_code = TREE_CODE (cond_expr);
@@ -10578,7 +10597,13 @@ vectorizable_condition (vec_info *vinfo,
       if (reduction_type == EXTRACT_LAST_REDUCTION)
 	/* Count one reduction-like operation per vector.  */
 	kind = vec_to_scalar;
-      else if (!expand_vec_cond_expr_p (vectype, comp_vectype, cond_code))
+      else if ((masked && !expand_vec_cond_expr_p (vectype, comp_vectype,
+						   cond_code))
+	       || (!masked
+		   && (!expand_vec_cmp_expr_p (comp_vectype, vec_cmp_type,
+					       cond_code)
+		       || !expand_vec_cond_expr_p (vectype, vec_cmp_type,
+						   VECTOR_CST))))
 	return false;
 
       if (slp_node
@@ -10765,7 +10790,7 @@ vectorizable_condition (vec_info *vinfo,
       /* Force vec_compare to be an SSA_NAME rather than a comparison,
 	 in cases where that's necessary.  */
 
-      if (masks || reduction_type == EXTRACT_LAST_REDUCTION)
+      if (!masked || masks || reduction_type == EXTRACT_LAST_REDUCTION)
 	{
 	  if (!is_gimple_val (vec_compare))
 	    {
