@@ -243,6 +243,12 @@ gimple_expand_vec_cond_expr (struct function *fun, gimple_stmt_iterator *gsi,
 	  tcode = LT_EXPR;
 	}
     }
+
+  if (VECTOR_BOOLEAN_TYPE_P (TREE_TYPE (op0))
+      && get_vcond_mask_icode (mode, TYPE_MODE (TREE_TYPE (op0)))
+	 != CODE_FOR_nothing)
+    return gimple_build_call_internal (IFN_VCOND_MASK, 3, op0, op1, op2);
+
   cmp_op_mode = TYPE_MODE (TREE_TYPE (op0a));
   unsignedp = TYPE_UNSIGNED (TREE_TYPE (op0a));
 
@@ -374,4 +380,3 @@ make_pass_gimple_isel (gcc::context *ctxt)
 {
   return new pass_gimple_isel (ctxt);
 }
-
