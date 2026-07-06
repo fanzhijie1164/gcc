@@ -69,3 +69,5 @@ stamp-*
 /isl*
 build_cross_release_12/
 gcc12_cross_release/
+gcc12_release/
+build_release/

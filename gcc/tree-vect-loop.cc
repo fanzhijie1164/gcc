@@ -2685,6 +2685,13 @@ start_over:
       return ok;
     }
 
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo).length () > 1)
+    return opt_result::failure_at
+      (vect_location,
+       "not vectorized: multiple live early-break inductions are not "
+       "supported in this GCC 12 backport.\n");
+
   /* For now, we don't expect to mix both masking and length approaches for one
      loop, disable it if both are recorded.  */
   if (LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo)
@@ -9071,18 +9078,6 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
   return new_tree;
 }
 
-/* Find the edge that's the final one in the path from SRC to DEST and
-   return it.  This edge must exist in at most one forwarder edge between.  */
-
-static edge
-find_connected_edge (edge src, basic_block dest)
-{
-   if (src->dest == dest)
-     return src;
-
-  return find_edge (src->dest, dest);
-}
-
 /* Function vectorizable_live_operation.
 
    STMT_INFO computes a value that is used outside the loop.  Check if
@@ -9321,7 +9316,8 @@ vectorizable_live_operation (vec_info *vinfo,
 	 did.  For the live values we want the value at the start of the iteration
 	 rather than at the end.  */
       edge main_e = LOOP_VINFO_IV_EXIT (loop_vinfo);
-      bool restart_loop = LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo);
+      bool all_exits_as_early_p
+	= LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo);
       FOR_EACH_IMM_USE_STMT (use_stmt, imm_iter, lhs)
 	if (!is_gimple_debug (use_stmt)
 	    && !flow_bb_inside_loop_p (loop, gimple_bb (use_stmt)))
@@ -9329,12 +9325,14 @@ vectorizable_live_operation (vec_info *vinfo,
 	    {
 	      edge e = gimple_phi_arg_edge (as_a <gphi *> (use_stmt),
 					   phi_arg_index_from_use (use_p));
-	      bool main_exit_edge = e == main_e
-				    || find_connected_edge (main_e, e->src);
-
-	      /* Early exits have an merge block, we want the merge block itself
-		 so use ->src.  For main exit the merge block is the
-		 destination.  */
+	      gcc_assert (loop_exit_edge_p (loop, e));
+	      bool main_exit_edge = e == main_e;
+	      /* GCC 12's DOM/VRP does not handle the duplicate vector PHIs that
+		 result from materializing every early-exit live value in the
+		 common destination block.  Keep the older insertion point for
+		 early exits, but use GCC 15's stricter main-exit test so that
+		 induction live values are extracted from the current vector IV
+		 rather than from the loop-entry IV.  */
 	      basic_block dest = main_exit_edge ? main_e->dest : e->src;
 	      tree tmp_vec_lhs = vec_lhs;
 	      tree tmp_bitstart = bitstart;
@@ -9342,9 +9340,10 @@ vectorizable_live_operation (vec_info *vinfo,
 	      /* For early exit where the exit is not in the BB that leads
 		 to the latch then we're restarting the iteration in the
 		 scalar loop.  So get the first live value.  */
-	      restart_loop = restart_loop || !main_exit_edge;
-	      if (restart_loop
-		  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def)
+	      bool early_break_first_element_p
+		= (all_exits_as_early_p || !main_exit_edge)
+		  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def;
+	      if (early_break_first_element_p)
 		{
 		  tmp_vec_lhs = vec_lhs0;
 		  tmp_bitstart = build_zero_cst (TREE_TYPE (bitstart));
@@ -9356,7 +9355,8 @@ vectorizable_live_operation (vec_info *vinfo,
 						 dest, vectype, ncopies,
 						 slp_node, bitsize,
 						 tmp_bitstart, tmp_vec_lhs,
-						 lhs_type, restart_loop,
+						 lhs_type,
+						 early_break_first_element_p,
 						 &exit_gsi);
 
 	      if (gimple_phi_num_args (use_stmt) == 1)

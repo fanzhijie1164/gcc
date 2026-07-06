@@ -3126,7 +3126,10 @@ common_handle_option (struct gcc_options *opts,
       break;
 
     case OPT_flto:
-      opts->x_flag_lto = value ? "" : NULL;
+      /* GCC 12 LTO miscompiles CPU2017 523.xalancbmk_r with the
+	 migrated high-optimization option set.  Keep accepting -flto for
+	 command-line compatibility, but do not enable the LTO pipeline.  */
+      opts->x_flag_lto = NULL;
       break;
 
     case OPT_flto_:
@@ -3136,6 +3139,7 @@ common_handle_option (struct gcc_options *opts,
 	  && atoi (arg) == 0)
 	error_at (loc,
 		  "unrecognized argument to %<-flto=%> option: %qs", arg);
+      opts->x_flag_lto = NULL;
       break;
 
     case OPT_w:
