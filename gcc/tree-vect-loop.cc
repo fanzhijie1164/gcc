@@ -2904,7 +2904,7 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
 		     loop_vec_info main_loop_vinfo,
 		     const vector_modes &vector_modes, unsigned &mode_i,
 		     machine_mode &autodetected_vector_mode,
-		     bool &fatal)
+		     bool &fatal, bool result_only_p)
 {
   loop_vec_info loop_vinfo
     = vect_create_loop_vinfo (loop, shared, loop_form_info, main_loop_vinfo);
@@ -2981,7 +2981,20 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
 
   if (!res)
     {
-      delete loop_vinfo;
+      /* If current analysis shows LOOP is unable to vectorize, loop_vinfo
+	 will be deleted.  If LOOP is under ldist analysis, backup it before
+	 it is deleted and return it if all modes are analyzed and still
+	 fail to vectorize.  */
+      if (result_only_p
+	  && (mode_i == vector_modes.length ()
+	      || autodetected_vector_mode == VOIDmode))
+	{
+	  opt_loop_vec_info fail_loop_vinfo
+	    = opt_loop_vec_info::success (loop_vinfo);
+	  loop->aux = (loop_vec_info) fail_loop_vinfo;
+	}
+      else
+	delete loop_vinfo;
       if (fatal)
 	gcc_checking_assert (main_loop_vinfo == NULL);
       return opt_loop_vec_info::propagate_failure (res);
@@ -2994,10 +3007,11 @@ vect_analyze_loop_1 (class loop *loop, vec_info_shared *shared,
 
    Apply a set of analyses on LOOP, and create a loop_vec_info struct
    for it.  The different analyses will record information in the
-   loop_vec_info struct.  */
+   loop_vec_info struct.  When RESULT_ONLY_P is true, quit analysis
+   if loop is vectorizable, otherwise, do not delete vinfo.  */
 opt_loop_vec_info
 vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
-		   vec_info_shared *shared)
+		   vec_info_shared *shared, bool result_only_p)
 {
   DUMP_VECT_SCOPE ("analyze_loop_nest");
 
@@ -3046,6 +3060,8 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 			     && !unlimited_cost_model (loop));
   machine_mode autodetected_vector_mode = VOIDmode;
   opt_loop_vec_info first_loop_vinfo = opt_loop_vec_info::success (NULL);
+  if (result_only_p)
+    vect_slp_init ();
   unsigned int mode_i = 0;
   unsigned HOST_WIDE_INT simdlen = loop->simdlen;
 
@@ -3069,9 +3085,14 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
       opt_loop_vec_info loop_vinfo
 	= vect_analyze_loop_1 (loop, shared, &loop_form_info,
 			       NULL, vector_modes, mode_i,
-			       autodetected_vector_mode, fatal);
+			       autodetected_vector_mode, fatal, result_only_p);
       if (fatal)
 	break;
+
+      if (result_only_p
+	  && (mode_i == vector_modes.length ()
+	      || autodetected_vector_mode == VOIDmode))
+	return loop_vinfo;
 
       if (loop_vinfo)
 	{
@@ -3185,7 +3206,7 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 	= vect_analyze_loop_1 (loop, shared, &loop_form_info,
 			       first_loop_vinfo,
 			       vector_modes, mode_i,
-			       autodetected_vector_mode, fatal);
+			       autodetected_vector_mode, fatal, result_only_p);
       if (fatal)
 	break;
 
