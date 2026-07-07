@@ -587,7 +587,7 @@ vect_set_loop_controls_directly (class loop *loop, loop_vec_info loop_vinfo,
       /* Create decrement IV.  */
       if (LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo))
 	{
-	  create_iv (nitems_total,
+	  create_iv (nitems_total, PLUS_EXPR,
 		     fold_build2 (MINUS_EXPR, iv_type,
 				  build_zero_cst (iv_type), step),
 		     NULL_TREE, loop, &incr_gsi, insert_after,
@@ -599,7 +599,7 @@ vect_set_loop_controls_directly (class loop *loop, loop_vec_info loop_vinfo,
 	}
       else
 	{
-	  create_iv (nitems_total,
+	  create_iv (nitems_total, PLUS_EXPR,
 		     fold_build2 (MINUS_EXPR, iv_type,
 				  build_zero_cst (iv_type), nitems_step),
 		     NULL_TREE, loop,
@@ -617,7 +617,7 @@ vect_set_loop_controls_directly (class loop *loop, loop_vec_info loop_vinfo,
     }
 
   /* Create increment IV.  */
-  create_iv (build_int_cst (iv_type, 0), nitems_step, NULL_TREE, loop,
+  create_iv (build_int_cst (iv_type, 0), PLUS_EXPR, nitems_step, NULL_TREE, loop,
 	     &incr_gsi, insert_after, &index_before_incr, &index_after_incr);
 
   tree zero_index = build_int_cst (compare_type, 0);
@@ -1066,7 +1066,7 @@ vect_set_loop_condition_partial_vectors_avx512 (class loop *loop,
   gimple_stmt_iterator incr_gsi;
   bool insert_after;
   vect_iv_increment_position (exit_edge, &incr_gsi, &insert_after);
-  create_iv (niters_adj,
+  create_iv (niters_adj, PLUS_EXPR,
 	     fold_build2 (MINUS_EXPR, iv_type, build_zero_cst (iv_type),
 			  iv_step),
 	     NULL_TREE, loop,
@@ -1346,7 +1346,7 @@ vect_set_loop_condition_normal (loop_vec_info /* loop_vinfo */, edge exit_edge,
     }
 
   vect_iv_increment_position (exit_edge, &incr_gsi, &insert_after);
-  create_iv (init, step, NULL_TREE, loop, &incr_gsi, insert_after,
+  create_iv (init, PLUS_EXPR, step, NULL_TREE, loop, &incr_gsi, insert_after,
 	     &indx_before_incr, &indx_after_incr);
   indx_after_incr = force_gimple_operand_gsi (&loop_cond_gsi, indx_after_incr,
 					      true, NULL_TREE, true,
