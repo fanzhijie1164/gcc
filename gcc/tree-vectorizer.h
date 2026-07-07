@@ -156,7 +156,9 @@ struct vect_scalar_ops_slice_hash : typed_noop_remove<vect_scalar_ops_slice>
   SLP
  ************************************************************************/
 typedef vec<std::pair<unsigned, unsigned> > lane_permutation_t;
+typedef auto_vec<std::pair<unsigned, unsigned>, 16> auto_lane_permutation_t;
 typedef vec<unsigned> load_permutation_t;
+typedef auto_vec<unsigned, 16> auto_load_permutation_t;
 
 /* A computation tree of an SLP instance.  Each node corresponds to a group of
    stmts to be packed in a SIMD stmt.  */
@@ -446,6 +448,10 @@ public:
   vec<stmt_vec_info> stmt_vec_infos;
   /* Whether the above mapping is complete.  */
   bool stmt_vec_info_ro;
+
+  /* Whether we've done a transform we think OK to not update virtual
+     SSA form.  */
+  bool any_known_not_updated_vssa;
 
   /* The SLP graph.  */
   auto_vec<slp_instance> slp_instances;
@@ -1041,13 +1047,30 @@ public:
   vec<basic_block> bbs;
 
   vec<slp_root> roots;
+  auto_vec<stmt_vec_info> grouped_loads;
+
+  /* State used by the local SLP transposition pass for BB vectorization.  */
+  auto_vec<vec<stmt_vec_info> > scalar_stores;
+  unsigned int trans_groups;
+  int scalar_cost;
+  int vec_inside_cost;
+  int vec_outside_cost;
+  bool transposed;
+  bool before_slp;
 } *bb_vec_info;
 
 #define BB_VINFO_BB(B)               (B)->bb
+#define BB_VINFO_GROUPED_LOADS(B)    (B)->grouped_loads
 #define BB_VINFO_GROUPED_STORES(B)   (B)->grouped_stores
 #define BB_VINFO_SLP_INSTANCES(B)    (B)->slp_instances
 #define BB_VINFO_DATAREFS(B)         (B)->shared->datarefs
 #define BB_VINFO_DDRS(B)             (B)->shared->ddrs
+#define BB_VINFO_SCALAR_STORES(B)    (B)->scalar_stores
+#define BB_VINFO_TRANS_GROUPS(B)     (B)->trans_groups
+#define BB_VINFO_SCALAR_COST(B)      (B)->scalar_cost
+#define BB_VINFO_VEC_INSIDE_COST(B)  (B)->vec_inside_cost
+#define BB_VINFO_VEC_OUTSIDE_COST(B) (B)->vec_outside_cost
+#define BB_VINFO_BEFORE_SLP(B)       (B)->before_slp
 
 /*-----------------------------------------------------------------*/
 /* Info on vectorized defs.                                        */
@@ -1289,6 +1312,11 @@ public:
   /* For loads only, the gap from the previous load. For consecutive loads, GAP
      is 1.  */
   unsigned int gap;
+  /* Saved grouped access state used by the local SLP transposition pass.  */
+  unsigned int gap_trans;
+  unsigned int size_trans;
+  int group_number;
+  bool slp_transpose;
 
   /* The minimum negative dependence distance this stmt participates in
      or zero if none.  */
@@ -1501,6 +1529,14 @@ struct gather_scatter_info {
   (gcc_checking_assert ((S)->dr_aux.dr), (S)->store_count)
 #define DR_GROUP_GAP(S) \
   (gcc_checking_assert ((S)->dr_aux.dr), (S)->gap)
+#define DR_GROUP_GAP_TRANS(S) \
+  (gcc_checking_assert ((S)->dr_aux.dr), (S)->gap_trans)
+#define DR_GROUP_SIZE_TRANS(S) \
+  (gcc_checking_assert ((S)->dr_aux.dr), (S)->size_trans)
+#define DR_GROUP_NUMBER(S) \
+  (gcc_checking_assert ((S)->dr_aux.dr), (S)->group_number)
+#define DR_GROUP_SLP_TRANSPOSE(S) \
+  (gcc_checking_assert ((S)->dr_aux.dr), (S)->slp_transpose)
 
 #define REDUC_GROUP_FIRST_ELEMENT(S) \
   (gcc_checking_assert (!(S)->dr_aux.dr), (S)->first_element)

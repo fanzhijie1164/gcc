@@ -463,7 +463,8 @@ shrink_simd_arrays
 vec_info::vec_info (vec_info::vec_kind kind_in, vec_info_shared *shared_)
   : kind (kind_in),
     shared (shared_),
-    stmt_vec_info_ro (false)
+    stmt_vec_info_ro (false),
+    any_known_not_updated_vssa (false)
 {
   stmt_vec_infos.create (50);
 }
@@ -1034,7 +1035,11 @@ vect_transform_loops (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
 
   /* Epilogue of vectorized loop must be vectorized too.  */
   if (new_loop)
-    todo |= vect_transform_loops (simduid_to_vf_htab, new_loop, NULL, fun);
+    {
+      loop_vinfo->any_known_not_updated_vssa = true;
+      todo |= TODO_update_ssa_only_virtuals;
+      todo |= vect_transform_loops (simduid_to_vf_htab, new_loop, NULL, fun);
+    }
 
   return todo;
 }

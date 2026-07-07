@@ -6526,7 +6526,7 @@ vect_optimize_slp_pass::remove_redundant_permutations ()
 	    {
 	      if (!this_load_permuted
 		  && (known_eq (LOOP_VINFO_VECT_FACTOR
-				  (as_a <loop_vec_info> (vinfo)), 1U)
+				  (as_a <loop_vec_info> (m_vinfo)), 1U)
 		      || SLP_TREE_LANES (node) == 1))
 		SLP_TREE_LOAD_PERMUTATION (node).release ();
 	      continue;
@@ -6946,7 +6946,13 @@ vect_detect_hybrid_slp (loop_vec_info loop_vinfo)
 _bb_vec_info::_bb_vec_info (vec<basic_block> _bbs, vec_info_shared *shared)
   : vec_info (vec_info::bb, shared),
     bbs (_bbs),
-    roots (vNULL)
+    roots (vNULL),
+    trans_groups (0),
+    scalar_cost (0),
+    vec_inside_cost (0),
+    vec_outside_cost (0),
+    transposed (false),
+    before_slp (false)
 {
   for (unsigned i = 0; i < bbs.length (); ++i)
     {
@@ -6976,6 +6982,10 @@ _bb_vec_info::_bb_vec_info (vec<basic_block> _bbs, vec_info_shared *shared)
 
 _bb_vec_info::~_bb_vec_info ()
 {
+  for (unsigned i = 0; i < scalar_stores.length (); ++i)
+    scalar_stores[i].release ();
+  scalar_stores.release ();
+
   /* Reset region marker.  */
   for (unsigned i = 0; i < bbs.length (); ++i)
     {
