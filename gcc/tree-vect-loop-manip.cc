@@ -262,22 +262,6 @@ adjust_phi_and_debug_stmts (gimple *update_phi, edge e, tree new_def)
 			gimple_bb (update_phi));
 }
 
-/* GCC 12 only exposes get_loop_exit_condition for loops.  The vectorizer
-   patches use the equivalent edge form in a few places.  */
-static gcond *
-get_loop_exit_condition (const_edge e)
-{
-  if (!e || !e->src)
-    return NULL;
-
-  gimple_stmt_iterator gsi = gsi_last_bb (e->src);
-  if (gsi_end_p (gsi))
-    return NULL;
-
-  gimple *stmt = gsi_stmt (gsi);
-  return is_a <gcond *> (stmt) ? as_a <gcond *> (stmt) : NULL;
-}
-
 /* Define one loop rgroup control CTRL from loop LOOP.  INIT_CTRL is the value
    that the control should have during the first iteration and NEXT_CTRL is the
    value that it should have on subsequent iterations.  */

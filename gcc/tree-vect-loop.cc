@@ -951,7 +951,11 @@ _loop_vec_info::_loop_vec_info (class loop *loop_in, vec_info_shared *shared)
     has_mask_store (false),
     scalar_loop_scaling (profile_probability::uninitialized ()),
     scalar_loop (NULL),
-    orig_loop_info (NULL)
+    orig_loop_info (NULL),
+    drs_advanced_by (NULL_TREE),
+    vec_loop_iv_exit (NULL),
+    vec_epilogue_loop_iv_exit (NULL),
+    scalar_loop_iv_exit (NULL)
 {
   /* CHECKME: We want to visit all BBs before their successors (except for
      latch blocks, for which this assertion wouldn't hold).  In the simple
@@ -9090,18 +9094,6 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
   return new_tree;
 }
 
-/* Find the edge that's the final one in the path from SRC to DEST and
-   return it.  This edge must exist in at most one forwarder edge between.  */
-
-static edge
-find_connected_edge (edge src, basic_block dest)
-{
-   if (src->dest == dest)
-     return src;
-
-  return find_edge (src->dest, dest);
-}
-
 /* Function vectorizable_live_operation.
 
    STMT_INFO computes a value that is used outside the loop.  Check if
@@ -9340,7 +9332,8 @@ vectorizable_live_operation (vec_info *vinfo,
 	 did.  For the live values we want the value at the start of the iteration
 	 rather than at the end.  */
       edge main_e = LOOP_VINFO_IV_EXIT (loop_vinfo);
-      bool restart_loop = LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo);
+      bool all_exits_as_early_p
+	= LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo);
       FOR_EACH_IMM_USE_STMT (use_stmt, imm_iter, lhs)
 	if (!is_gimple_debug (use_stmt)
 	    && !flow_bb_inside_loop_p (loop, gimple_bb (use_stmt)))
@@ -9348,22 +9341,18 @@ vectorizable_live_operation (vec_info *vinfo,
 	    {
 	      edge e = gimple_phi_arg_edge (as_a <gphi *> (use_stmt),
 					   phi_arg_index_from_use (use_p));
-	      bool main_exit_edge = e == main_e
-				    || find_connected_edge (main_e, e->src);
-
-	      /* Early exits have an merge block, we want the merge block itself
-		 so use ->src.  For main exit the merge block is the
-		 destination.  */
-	      basic_block dest = main_exit_edge ? main_e->dest : e->src;
+	      gcc_assert (loop_exit_edge_p (loop, e));
+	      bool main_exit_edge = e == main_e;
 	      tree tmp_vec_lhs = vec_lhs;
 	      tree tmp_bitstart = bitstart;
 
 	      /* For early exit where the exit is not in the BB that leads
 		 to the latch then we're restarting the iteration in the
 		 scalar loop.  So get the first live value.  */
-	      restart_loop = restart_loop || !main_exit_edge;
-	      if (restart_loop
-		  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def)
+	      bool early_break_first_element_p
+		= (all_exits_as_early_p || !main_exit_edge)
+		  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def;
+	      if (early_break_first_element_p)
 		{
 		  tmp_vec_lhs = vec_lhs0;
 		  tmp_bitstart = build_zero_cst (TREE_TYPE (bitstart));
@@ -9372,10 +9361,11 @@ vectorizable_live_operation (vec_info *vinfo,
 	      gimple_stmt_iterator exit_gsi;
 	      tree new_tree
 		= vectorizable_live_operation_1 (loop_vinfo, stmt_info,
-						 dest, vectype, ncopies,
+						 e->dest, vectype, ncopies,
 						 slp_node, bitsize,
 						 tmp_bitstart, tmp_vec_lhs,
-						 lhs_type, restart_loop,
+						 lhs_type,
+						 early_break_first_element_p,
 						 &exit_gsi);
 
 	      if (gimple_phi_num_args (use_stmt) == 1)
