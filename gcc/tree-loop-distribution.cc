@@ -3193,11 +3193,11 @@ loop_distribution::check_loop_vectorizable (loop_p loop)
       loop->aux = NULL;
       return false;
     }
-  if (vinfo->grouped_loads.length () == 0)
+  if (vinfo->grouped_stores.length () == 0)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file, "Loop %d no temp array insertion: original loop"
-			    " has no grouped loads.\n" , loop->num);
+			 " has no grouped stores.\n" , loop->num);
       delete vinfo;
       loop->aux = NULL;
       return false;
@@ -3256,7 +3256,7 @@ loop_distribution::may_insert_temp_arrays (loop_p loop, struct graph *&rdg,
   return true;
 }
 
-/* Return max grouped loads' length if all groupes length satisfy len = 2 ^ n.
+/* Return max grouped stores' length if all groups length satisfy len = 2 ^ n.
    Otherwise, return 0.  */
 
 static unsigned
@@ -3266,7 +3266,7 @@ get_max_vf (loop_vec_info vinfo)
   unsigned max = 0;
   stmt_vec_info stmt_info;
   unsigned i = 0;
-  FOR_EACH_VEC_ELT (vinfo->grouped_loads, i, stmt_info)
+  FOR_EACH_VEC_ELT (vinfo->grouped_stores, i, stmt_info)
     {
       size = stmt_info->size;
       if (!pow2p_hwi (size))
@@ -3276,7 +3276,7 @@ get_max_vf (loop_vec_info vinfo)
   return max;
 }
 
-/* Convert grouped_loads from linked list to vector with length vf.  Init
+/* Convert grouped stores from linked list to vector with length vf.  Init
    group_info of each stmt in the same group and put then into a vector.  And
    these vectors consist WORKLISTS.  We will re-analyze a group if it is
    uncertain, so we regard WORKLISTS as a circular queue.  */
@@ -3289,7 +3289,7 @@ build_queue (loop_vec_info vinfo, unsigned vf,
   unsigned i = 0;
   group_info ginfo = NULL;
   vec<group_info> *worklist = NULL;
-  FOR_EACH_VEC_ELT (vinfo->grouped_loads, i, stmt_info)
+  FOR_EACH_VEC_ELT (vinfo->grouped_stores, i, stmt_info)
     {
       unsigned group_size = stmt_info->size;
       stmt_vec_info c_stmt_info = stmt_info;
