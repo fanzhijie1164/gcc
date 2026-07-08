@@ -311,7 +311,8 @@ phi_group *
 phi_analyzer::group (tree name) const
 {
   gcc_checking_assert (TREE_CODE (name) == SSA_NAME);
-  if (!is_a<gphi *> (SSA_NAME_DEF_STMT (name)))
+  gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+  if (!def_stmt || !is_a<gphi *> (def_stmt))
     return NULL;
   unsigned v = SSA_NAME_VERSION (name);
   if (v >= m_tab.length ())
@@ -331,7 +332,8 @@ phi_analyzer::operator[] (tree name)
   //  Initial support for irange only.
   if (!irange::supports_p (TREE_TYPE (name)))
     return NULL;
-  if (!is_a<gphi *> (SSA_NAME_DEF_STMT (name)))
+  gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+  if (!def_stmt || !is_a<gphi *> (def_stmt))
     return NULL;
 
   unsigned v = SSA_NAME_VERSION (name);
@@ -341,12 +343,13 @@ phi_analyzer::operator[] (tree name)
 
   if (v >= m_tab.length () || !m_tab[v])
     {
-      process_phi (as_a<gphi *> (SSA_NAME_DEF_STMT (name)));
+      process_phi (as_a<gphi *> (def_stmt));
       if (bitmap_bit_p (m_simple, v))
 	return  NULL;
-      // If m_simple bit isn't set, then process_phi allocated the table
-      // and should have a group.
-      gcc_checking_assert (v < m_tab.length ());
+     // If m_simple bit isn't set, and process_phi didn't allocated the table
+     // no group was created, so return NULL.
+     if (v >= m_tab.length ())
+      return NULL;
     }
   return m_tab[v];
 }
@@ -363,6 +366,7 @@ phi_analyzer::process_phi (gphi *phi)
   unsigned x;
   m_work.truncate (0);
   m_work.safe_push (gimple_phi_result (phi));
+  unsigned phi_count = 1;
   bitmap_clear (m_current);
 
   // We can only have 2 externals: an initial value and a modifier.
@@ -407,6 +411,7 @@ phi_analyzer::process_phi (gphi *phi)
 	      gimple *arg_stmt = SSA_NAME_DEF_STMT (arg);
 	      if (arg_stmt && is_a<gphi *> (arg_stmt))
 		{
+		  phi_count++;
 		  m_work.safe_push (arg);
 		  continue;
 		}
@@ -430,9 +435,12 @@ phi_analyzer::process_phi (gphi *phi)
 	}
     }
 
-  // If there are no names in the group, we're done.
-  if (bitmap_empty_p (m_current))
+  // If there are less than 2 names, just return.  This PHI may be included
+  // by another PHI, making it simple or a group of one will prevent a larger
+  // group from being formed.
+  if (phi_count < 2)
     return;
+  gcc_checking_assert (!bitmap_empty_p (m_current));
 
   phi_group *g = NULL;
   if (cycle_p)
@@ -445,13 +453,15 @@ phi_analyzer::process_phi (gphi *phi)
       for (x = 0; x < m_num_extern; x++)
 	{
 	  tree name = m_external[x];
-	  if (TREE_CODE (name) == SSA_NAME
-	      && phi_group::is_modifier_p (SSA_NAME_DEF_STMT (name), m_current))
+	  gimple *def_stmt = (TREE_CODE (name) == SSA_NAME
+			      ? SSA_NAME_DEF_STMT (name) : NULL);
+	  if (def_stmt
+	      && phi_group::is_modifier_p (def_stmt, m_current))
 	    {
 	      // Can't have multiple modifiers.
 	      if (mod)
 		valid = false;
-	      mod = SSA_NAME_DEF_STMT (name);
+	      mod = def_stmt;
 	      continue;
 	    }
 	  // Can't have 2 initializers either.
@@ -459,7 +469,7 @@ phi_analyzer::process_phi (gphi *phi)
 	    valid = false;
 	  init_idx = x;
 	}
-      if (valid)
+      if (valid && init_idx != -1)
 	{
 	  // Try to create a group based on m_current. If a result comes back
 	  // with a range that isn't varying, create the group.

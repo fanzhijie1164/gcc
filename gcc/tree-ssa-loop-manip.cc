@@ -411,14 +411,18 @@ find_uses_to_rename_use (basic_block bb, tree use, bitmap *use_blocks,
 			 bitmap need_phis)
 {
   unsigned ver;
+  gimple *def_stmt;
   basic_block def_bb;
   class loop *def_loop;
 
-  if (TREE_CODE (use) != SSA_NAME)
+  if (!use || TREE_CODE (use) != SSA_NAME)
     return;
 
   ver = SSA_NAME_VERSION (use);
-  def_bb = gimple_bb (SSA_NAME_DEF_STMT (use));
+  def_stmt = SSA_NAME_DEF_STMT (use);
+  if (!def_stmt)
+    return;
+  def_bb = gimple_bb (def_stmt);
   if (!def_bb)
     return;
   def_loop = def_bb->loop_father;

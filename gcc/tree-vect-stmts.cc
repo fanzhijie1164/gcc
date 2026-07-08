@@ -679,6 +679,8 @@ vect_mark_stmts_to_be_vectorized (loop_vec_info loop_vinfo, bool *fatal)
       bb = bbs[i];
       for (si = gsi_start_phis (bb); !gsi_end_p (si); gsi_next (&si))
 	{
+	  if (virtual_operand_p (gimple_phi_result (gsi_stmt (si))))
+	    continue;
 	  stmt_vec_info phi_info = loop_vinfo->lookup_stmt (gsi_stmt (si));
 	  if (dump_enabled_p ())
 	    dump_printf_loc (MSG_NOTE, vect_location, "init: phi relevant? %G",

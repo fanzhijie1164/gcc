@@ -166,10 +166,14 @@ jump_threader::record_temporary_equivalences_from_phis (edge e)
 	 and it is set by a PHI in E->dest, then we cannot thread
 	 through E->dest.  */
       if (src != dst
-	  && TREE_CODE (src) == SSA_NAME
-	  && gimple_code (SSA_NAME_DEF_STMT (src)) == GIMPLE_PHI
-	  && gimple_bb (SSA_NAME_DEF_STMT (src)) == e->dest)
-	return false;
+	  && TREE_CODE (src) == SSA_NAME)
+	{
+	  gimple *def_stmt = SSA_NAME_DEF_STMT (src);
+	  if (def_stmt
+	      && gimple_code (def_stmt) == GIMPLE_PHI
+	      && gimple_bb (def_stmt) == e->dest)
+	    return false;
+	}
 
       /* We consider any non-virtual PHI as a statement since it
 	 count result in a constant assignment or copy operation.  */

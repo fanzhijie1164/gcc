@@ -164,14 +164,16 @@ mark_operand_necessary (tree op)
   if (bitmap_bit_p (processed, ver))
     {
       stmt = SSA_NAME_DEF_STMT (op);
-      gcc_assert (gimple_nop_p (stmt)
+      gcc_assert (!stmt
+		  || gimple_nop_p (stmt)
 		  || gimple_plf (stmt, STMT_NECESSARY));
       return;
     }
   bitmap_set_bit (processed, ver);
 
   stmt = SSA_NAME_DEF_STMT (op);
-  gcc_assert (stmt);
+  if (!stmt)
+    return;
 
   if (gimple_plf (stmt, STMT_NECESSARY) || gimple_nop_p (stmt))
     return;

@@ -5392,7 +5392,7 @@ vect_create_epilog_for_reduction (loop_vec_info loop_vinfo,
   stmt_vec_info rdef_info = stmt_info;
   if (STMT_VINFO_DEF_TYPE (stmt_info) == vect_double_reduction_def)
     {
-      gcc_assert (!slp_node);
+      gcc_assert (!slp_node || SLP_TREE_LANES (slp_node) == 1);
       double_reduc = true;
       stmt_info = loop_vinfo->lookup_def (gimple_phi_arg_def
 					    (stmt_info->stmt, 0));
@@ -5551,7 +5551,8 @@ vect_create_epilog_for_reduction (loop_vec_info loop_vinfo,
       /* Create an induction variable.  */
       gimple_stmt_iterator incr_gsi;
       bool insert_after;
-      vect_iv_increment_position (loop_exit, &incr_gsi, &insert_after);
+      vect_iv_increment_position (LOOP_VINFO_IV_EXIT (loop_vinfo),
+				  &incr_gsi, &insert_after);
       create_iv (series_vect, PLUS_EXPR, vec_step, NULL_TREE, loop, &incr_gsi,
 		 insert_after, &indx_before_incr, &indx_after_incr);
 
@@ -8987,7 +8988,17 @@ vectorizable_live_operation_1 (loop_vec_info loop_vinfo,
 
   gimple_seq stmts = NULL;
   tree new_tree;
-  if (LOOP_VINFO_FULLY_WITH_LENGTH_P (loop_vinfo))
+
+  /* If bitstart is 0 then we can use a BIT_FIELD_REF.  */
+  if (integer_zerop (bitstart))
+    {
+      tree scalar_res = gimple_build (&stmts, BIT_FIELD_REF, TREE_TYPE (vectype),
+				      vec_lhs_phi, bitsize, bitstart);
+
+      /* Convert the extracted vector element to the scalar type.  */
+      new_tree = gimple_convert (&stmts, lhs_type, scalar_res);
+    }
+  else if (LOOP_VINFO_FULLY_WITH_LENGTH_P (loop_vinfo))
     {
       /* Emit:
 
@@ -9214,17 +9225,7 @@ vectorizable_live_operation (vec_info *vinfo,
       /* No transformation required.  */
       if (loop_vinfo && LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo))
 	{
-	  if (!direct_internal_fn_supported_p (IFN_EXTRACT_LAST, vectype,
-					       OPTIMIZE_FOR_SPEED))
-	    {
-	      if (dump_enabled_p ())
-		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
-				 "can't operate on partial vectors "
-				 "because the target doesn't support extract "
-				 "last reduction.\n");
-	      LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo) = false;
-	    }
-	  else if (slp_node)
+	  if (slp_node && SLP_TREE_LANES (slp_node) != 1)
 	    {
 	      if (dump_enabled_p ())
 		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -9233,7 +9234,8 @@ vectorizable_live_operation (vec_info *vinfo,
 				 "the loop.\n");
 	      LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo) = false;
 	    }
-	  else if (ncopies > 1)
+	  else if (ncopies > 1
+		   || (slp_node && SLP_TREE_NUMBER_OF_VEC_STMTS (slp_node) > 1))
 	    {
 	      if (dump_enabled_p ())
 		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -9243,10 +9245,22 @@ vectorizable_live_operation (vec_info *vinfo,
 	    }
 	  else
 	    {
-	      gcc_assert (ncopies == 1 && !slp_node);
-	      vect_record_loop_mask (loop_vinfo,
-				     &LOOP_VINFO_MASKS (loop_vinfo),
-				     1, vectype, NULL);
+	      gcc_assert (ncopies == 1
+			  && (!slp_node || SLP_TREE_LANES (slp_node) == 1));
+	      if (direct_internal_fn_supported_p (IFN_EXTRACT_LAST, vectype,
+						  OPTIMIZE_FOR_SPEED))
+		vect_record_loop_mask (loop_vinfo,
+				       &LOOP_VINFO_MASKS (loop_vinfo),
+				       1, vectype, NULL);
+	      else
+		{
+		  if (dump_enabled_p ())
+		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+				     "can't operate on partial vectors "
+				     "because the target doesn't support extract "
+				     "last reduction.\n");
+		  LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo) = false;
+		}
 	    }
 	}
       /* ???  Enable for loop costing as well.  */
@@ -9272,7 +9286,10 @@ vectorizable_live_operation (vec_info *vinfo,
   gimple *vec_stmt, *vec_stmt0;
   if (slp_node)
     {
-      gcc_assert (!loop_vinfo || !LOOP_VINFO_FULLY_MASKED_P (loop_vinfo));
+      gcc_assert (!loop_vinfo
+		  || ((!LOOP_VINFO_FULLY_MASKED_P (loop_vinfo)
+		       && !LOOP_VINFO_FULLY_WITH_LENGTH_P (loop_vinfo))
+		      || SLP_TREE_LANES (slp_node) == 1));
 
       if (SLP_TREE_VEC_DEFS (slp_node).exists ())
 	{
@@ -9368,17 +9385,13 @@ vectorizable_live_operation (vec_info *vinfo,
 						 early_break_first_element_p,
 						 &exit_gsi);
 
-	      if (gimple_phi_num_args (use_stmt) == 1)
-			{
-			  auto gsi = gsi_for_stmt (use_stmt);
-			  tree lhs_phi = gimple_phi_result (use_stmt);
-			  remove_phi_node (&gsi, false);
-			  gimple *copy = gimple_build_assign (lhs_phi, new_tree);
-			  gsi_insert_before (&exit_gsi, copy, GSI_SAME_STMT);
-			}
-	      else
-		SET_PHI_ARG_DEF (use_stmt, e->dest_idx, new_tree);
-	  }
+		      auto gsi = gsi_for_stmt (use_stmt);
+		      tree lhs_phi = gimple_phi_result (use_stmt);
+		      remove_phi_node (&gsi, false);
+		      gimple *copy = gimple_build_assign (lhs_phi, new_tree);
+		      gsi_insert_before (&exit_gsi, copy, GSI_SAME_STMT);
+		      break;
+		    }
 
       /* There a no further out-of-loop uses of lhs by LC-SSA construction.  */
       FOR_EACH_IMM_USE_STMT (use_stmt, imm_iter, lhs)

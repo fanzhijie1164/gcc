@@ -9280,6 +9280,9 @@ bool
 gimple_stmt_nonnegative_warnv_p (gimple *stmt, bool *strict_overflow_p,
 				 int depth)
 {
+  if (!stmt)
+    return false;
+
   tree type = gimple_range_type (stmt);
   if (type && frange::supports_p (type))
     {
