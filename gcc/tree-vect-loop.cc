@@ -10158,6 +10158,7 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
       class loop *sloop
 	= vect_loop_versioning (loop_vinfo, loop_vectorized_call);
       sloop->force_vectorize = false;
+      loop_vinfo->any_known_not_updated_vssa = true;
       check_profitability = false;
     }
 
