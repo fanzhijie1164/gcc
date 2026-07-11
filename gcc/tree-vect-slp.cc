@@ -1188,6 +1188,9 @@ vect_build_slp_tree_1 (vec_info *vinfo, unsigned char *swap,
 			|| rhs_code == INDIRECT_REF
 			|| rhs_code == COMPONENT_REF
 			|| rhs_code == MEM_REF)))
+	      || (load_p
+		  && (STMT_VINFO_GROUPED_ACCESS (stmt_info)
+		      != STMT_VINFO_GROUPED_ACCESS (first_stmt_info)))
 	      || first_stmt_load_p != load_p
 	      || first_stmt_phi_p != phi_p)
 	    {
@@ -1816,14 +1819,18 @@ vect_build_slp_tree_2 (vec_info *vinfo, slp_tree node,
 	  load_permutation.create (group_size);
 	  stmt_vec_info first_stmt_info
 	    = STMT_VINFO_GROUPED_ACCESS (stmt_info)
-	      ? DR_GROUP_FIRST_ELEMENT (SLP_TREE_SCALAR_STMTS (node)[0])
-	      : stmt_info;
+	      ? DR_GROUP_FIRST_ELEMENT (stmt_info) : stmt_info;
 	  bool any_permute = false;
 	  FOR_EACH_VEC_ELT (SLP_TREE_SCALAR_STMTS (node), j, load_info)
 	    {
 	      int load_place;
 	      if (!load_info)
-		load_place = STMT_VINFO_GROUPED_ACCESS (stmt_info) ? j : 0;
+		{
+		  if (STMT_VINFO_GROUPED_ACCESS (stmt_info))
+		    load_place = j;
+		  else
+		    load_place = 0;
+		}
 	      else if (STMT_VINFO_GROUPED_ACCESS (stmt_info))
 		load_place = vect_get_place_in_interleaving_chain
 		  (load_info, first_stmt_info);

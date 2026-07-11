@@ -1996,6 +1996,76 @@ vect_analyze_loop_costing (loop_vec_info loop_vinfo,
 	}
     }
 
+  /* If we know the number of iterations we can do better, for the
+     epilogue we can also decide whether the main loop leaves us
+     with enough iterations, prefering a smaller vector epilog then
+     also possibly used for the case we skip the vector loop.  */
+  if (LOOP_VINFO_NITERS_KNOWN_P (loop_vinfo))
+    {
+      widest_int scalar_niters
+	= wi::to_widest (LOOP_VINFO_NITERSM1 (loop_vinfo)) + 1;
+      if (LOOP_VINFO_EPILOGUE_P (loop_vinfo))
+	{
+	  loop_vec_info orig_loop_vinfo
+	    = LOOP_VINFO_ORIG_LOOP_INFO (loop_vinfo);
+	  unsigned lowest_vf
+	    = constant_lower_bound (LOOP_VINFO_VECT_FACTOR (orig_loop_vinfo));
+	  int prolog_peeling = 0;
+	  if (!vect_use_loop_mask_for_alignment_p (orig_loop_vinfo))
+	    prolog_peeling = LOOP_VINFO_PEELING_FOR_ALIGNMENT (orig_loop_vinfo);
+	  if (prolog_peeling >= 0
+	      && known_eq (LOOP_VINFO_VECT_FACTOR (orig_loop_vinfo),
+			   lowest_vf))
+	    {
+	      unsigned gap
+		= LOOP_VINFO_PEELING_FOR_GAPS (orig_loop_vinfo) ? 1 : 0;
+	      scalar_niters = ((scalar_niters - gap - prolog_peeling)
+			       % lowest_vf + gap);
+	    }
+	}
+      /* Reject vectorizing for a single scalar iteration, even if
+	 we could in principle implement that using partial vectors.  */
+      unsigned peeling_gap = LOOP_VINFO_PEELING_FOR_GAPS (loop_vinfo);
+      if (scalar_niters <= peeling_gap + 1)
+	{
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "not vectorized: loop only has a single "
+			     "scalar iteration.\n");
+	  return 0;
+	}
+
+      if (!LOOP_VINFO_USING_PARTIAL_VECTORS_P (loop_vinfo))
+	{
+	  /* Check that the loop processes at least one full vector.  */
+	  poly_uint64 vf = LOOP_VINFO_VECT_FACTOR (loop_vinfo);
+	  if (known_lt (scalar_niters, vf))
+	    {
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+				 "loop does not have enough iterations "
+				 "to support vectorization.\n");
+	      return 0;
+	    }
+
+	  /* If we need to peel an extra epilogue iteration to handle data
+	     accesses with gaps, check that there are enough scalar iterations
+	     available.
+
+	     The check above is redundant with this one when peeling for gaps,
+	     but the distinction is useful for diagnostics.  */
+	  if (LOOP_VINFO_PEELING_FOR_GAPS (loop_vinfo)
+	      && known_le (scalar_niters, vf))
+	    {
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+				 "loop does not have enough iterations "
+				 "to support peeling for gaps.\n");
+	      return 0;
+	    }
+	}
+    }
+
   /* If using the "very cheap" model. reject cases in which we'd keep
      a copy of the scalar code (even if we might be able to vectorize it).  */
   if (loop_cost_model (loop) == VECT_COST_MODEL_VERY_CHEAP
@@ -5647,7 +5717,13 @@ vect_create_epilog_for_reduction (loop_vec_info loop_vinfo,
 	  phi = create_phi_node (new_def, exit_bb);
 	  if (j)
 	    def = gimple_get_lhs (vec_stmts[j]);
-	  SET_PHI_ARG_DEF (phi, loop_exit->dest_idx, def);
+	  if (LOOP_VINFO_IV_EXIT (loop_vinfo) == loop_exit)
+	    SET_PHI_ARG_DEF (phi, loop_exit->dest_idx, def);
+	  else
+	    {
+	      for (unsigned k = 0; k < gimple_phi_num_args (phi); k++)
+		SET_PHI_ARG_DEF (phi, k, def);
+	    }
 	  new_def = gimple_convert (&stmts, vectype, new_def);
 	  reduc_inputs.quick_push (new_def);
 	}
@@ -10066,10 +10142,31 @@ move_early_exit_stmts (loop_vec_info loop_vinfo)
 
   /* Move all stmts that need moving.  */
   basic_block dest_bb = LOOP_VINFO_EARLY_BRK_DEST_BB (loop_vinfo);
-  gimple_stmt_iterator dest_gsi = gsi_start_bb (dest_bb);
+  gimple_stmt_iterator dest_gsi = gsi_after_labels (dest_bb);
 
+  tree last_seen_vuse = NULL_TREE;
   for (gimple *stmt : LOOP_VINFO_EARLY_BRK_STORES (loop_vinfo))
     {
+      /* We have to update crossed degenerate virtual PHIs.  Simply
+	 elide them.  */
+      if (gphi *vphi = dyn_cast <gphi *> (stmt))
+	{
+	  tree vdef = gimple_phi_result (vphi);
+	  tree vuse = gimple_phi_arg_def (vphi, 0);
+	  imm_use_iterator iter;
+	  use_operand_p use_p;
+	  gimple *use_stmt;
+	  FOR_EACH_IMM_USE_STMT (use_stmt, iter, vdef)
+	    {
+	      FOR_EACH_IMM_USE_ON_STMT (use_p, iter)
+		SET_USE (use_p, vuse);
+	    }
+	  auto gsi = gsi_for_stmt (stmt);
+	  remove_phi_node (&gsi, true);
+	  last_seen_vuse = vuse;
+	  continue;
+	}
+
       /* Check to see if statement is still required for vect or has been
 	 elided.  */
       auto stmt_info = loop_vinfo->lookup_stmt (stmt);
@@ -10081,20 +10178,25 @@ move_early_exit_stmts (loop_vec_info loop_vinfo)
 
       gimple_stmt_iterator stmt_gsi = gsi_for_stmt (stmt);
       gsi_move_before (&stmt_gsi, &dest_gsi);
-      gsi_prev (&dest_gsi);
+      last_seen_vuse = gimple_vuse (stmt);
     }
 
   /* Update all the stmts with their new reaching VUSES.  */
-  tree vuse
-    = gimple_vuse (LOOP_VINFO_EARLY_BRK_STORES (loop_vinfo).last ());
   for (auto p : LOOP_VINFO_EARLY_BRK_VUSES (loop_vinfo))
     {
       if (dump_enabled_p ())
 	  dump_printf_loc (MSG_NOTE, vect_location,
-			   "updating vuse to %T for load %G", vuse, p);
-      gimple_set_vuse (p, vuse);
+			   "updating vuse to %T for load %G",
+			   last_seen_vuse, p);
+      gimple_set_vuse (p, last_seen_vuse);
       update_stmt (p);
     }
+
+  /* And update the LC PHIs on exits.  */
+  for (edge e : get_loop_exit_edges (LOOP_VINFO_LOOP  (loop_vinfo)))
+    if (!dominated_by_p (CDI_DOMINATORS, e->src, dest_bb))
+      if (gphi *phi = get_virtual_phi (e->dest))
+	SET_PHI_ARG_DEF (phi, e->dest_idx, last_seen_vuse);
 }
 
 /* Function vect_transform_loop.

@@ -328,6 +328,7 @@ tree_ssa_unswitch_loops (function *fun)
   bool changed_unswitch = false;
   bool changed_hoist = false;
   auto_edge_flag ignored_edge_flag (fun);
+  mark_ssa_maybe_undefs ();
 
   ranger = enable_ranger (fun);
 
@@ -426,65 +427,7 @@ is_maybe_undefined (const tree name, gimple *stmt, class loop *loop)
   if (gimple_bb (stmt) == loop->header)
     return false;
 
-  auto_bitmap visited_ssa;
-  auto_vec<tree> worklist;
-  worklist.safe_push (name);
-  bitmap_set_bit (visited_ssa, SSA_NAME_VERSION (name));
-  while (!worklist.is_empty ())
-    {
-      tree t = worklist.pop ();
-
-      /* If it's obviously undefined, avoid further computations.  */
-      if (ssa_undefined_value_p (t, true))
-	return true;
-
-      if (ssa_defined_default_def_p (t))
-	continue;
-
-      gimple *def = SSA_NAME_DEF_STMT (t);
-
-      /* Check that all the PHI args are fully defined.  */
-      if (gphi *phi = dyn_cast <gphi *> (def))
-	{
-	  for (unsigned i = 0; i < gimple_phi_num_args (phi); ++i)
-	    {
-	      tree t = gimple_phi_arg_def (phi, i);
-	      /* If an SSA has already been seen, it may be a loop,
-		 but we can continue and ignore this use.  Otherwise,
-		 add the SSA_NAME to the queue and visit it later.  */
-	      if (TREE_CODE (t) == SSA_NAME
-		  && bitmap_set_bit (visited_ssa, SSA_NAME_VERSION (t)))
-		worklist.safe_push (t);
-	    }
-	  continue;
-	}
-
-      /* Uses in stmts always executed when the region header executes
-	 are fine.  */
-      if (dominated_by_p (CDI_DOMINATORS, loop->header, gimple_bb (def)))
-	continue;
-
-      /* Handle calls and memory loads conservatively.  */
-      if (!is_gimple_assign (def)
-	  || (gimple_assign_single_p (def)
-	      && gimple_vuse (def)))
-	return true;
-
-      /* Check that any SSA names used to define NAME are also fully
-	 defined.  */
-      use_operand_p use_p;
-      ssa_op_iter iter;
-      FOR_EACH_SSA_USE_OPERAND (use_p, def, iter, SSA_OP_USE)
-	{
-	  tree t = USE_FROM_PTR (use_p);
-	  /* If an SSA has already been seen, it may be a loop,
-	     but we can continue and ignore this use.  Otherwise,
-	     add the SSA_NAME to the queue and visit it later.  */
-	  if (bitmap_set_bit (visited_ssa, SSA_NAME_VERSION (t)))
-	    worklist.safe_push (t);
-	}
-    }
-  return false;
+  return ssa_name_maybe_undef_p (name);
 }
 
 /* Checks whether we can unswitch LOOP on condition at end of BB -- one of its
@@ -984,6 +927,16 @@ tree_unswitch_single_loop (class loop *loop, dump_user_location_t loc,
   unswitch_predicate *predicate = NULL;
   basic_block predicate_bb = NULL;
   unsigned true_size = 0, false_size = 0;
+  /* Repeated no-growth unswitching can still create a large recursion tree.  */
+  unsigned max_depth = MIN ((unsigned)param_max_unswitch_depth, 8u);
+
+  if (predicate_path.length () >= max_depth)
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, loc,
+			 "not unswitching condition, maximum depth reached\n");
+      return false;
+    }
 
   auto check_predicates = [&](basic_block bb) -> bool
     {
@@ -1731,5 +1684,3 @@ make_pass_tree_unswitch (gcc::context *ctxt)
 {
   return new pass_tree_unswitch (ctxt);
 }
-
-

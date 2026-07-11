@@ -17373,6 +17373,18 @@ aarch64_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
       && is_a<gphi *> (stmt_info->stmt))
     count -= 1;
 
+  /* Likewise, GCC 15's AArch64 costs do not charge vector induction
+     PHIs in the loop body.  They are normally hidden by other operations,
+     and charging them can make early-break idioms such as std::find look
+     unprofitable for targets with an integer stmt cost of 2.  */
+  if (stmt_info
+      && m_vec_flags
+      && !use_new_vector_costs_p
+      && kind == vector_stmt
+      && where == vect_body
+      && is_a<gphi *> (stmt_info->stmt))
+    stmt_cost = 0;
+
   if (stmt_info && use_new_vector_costs_p)
     {
       /* If we scalarize a strided store, the vectorizer costs one

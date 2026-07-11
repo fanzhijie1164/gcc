@@ -263,29 +263,17 @@ replace_loop_annotate_in_block (basic_block bb, class loop *loop)
 {
   gimple_stmt_iterator gsi = gsi_last_bb (bb);
   gimple *stmt = gsi_stmt (gsi);
-  tree cond_use;
 
   if (!(stmt && gimple_code (stmt) == GIMPLE_COND))
     return;
 
-  cond_use = gimple_cond_lhs (stmt);
-
   for (gsi_prev_nondebug (&gsi); !gsi_end_p (gsi); gsi_prev (&gsi))
     {
       stmt = gsi_stmt (gsi);
-      if (gimple_assign_copy_p (stmt)
-	  && cond_use
-	  && gimple_assign_lhs (stmt) == cond_use)
-	{
-	  cond_use = gimple_assign_rhs1 (stmt);
-	  continue;
-	}
       if (gimple_code (stmt) != GIMPLE_CALL)
 	break;
       if (!gimple_call_internal_p (stmt)
 	  || gimple_call_internal_fn (stmt) != IFN_ANNOTATE)
-	break;
-      if (cond_use && gimple_call_lhs (stmt) != cond_use)
 	break;
 
       switch ((annot_expr_kind) tree_to_shwi (gimple_call_arg (stmt, 1)))

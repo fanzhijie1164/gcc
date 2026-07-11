@@ -42,6 +42,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimplify-me.h"
 #include "tree-cfg.h"
 #include "tree-ssa-loop-manip.h"
+#include "tree-into-ssa.h"
 #include "cfgloop.h"
 #include "explow.h"
 #include "tree-ssa-loop.h"
@@ -1175,15 +1176,13 @@ vect_model_load_cost (vec_info *vinfo,
 
   if (slp_node && SLP_TREE_LOAD_PERMUTATION (slp_node).exists ())
     {
-      /* If the load is permuted then the alignment is determined by
-	 the first group element not by the first scalar stmt DR.  */
-      stmt_vec_info first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
       /* Record the cost for the permutation.  */
       unsigned n_perms, n_loads;
       vect_transform_slp_perm_load (vinfo, slp_node, vNULL, NULL,
 				    vf, true, &n_perms, &n_loads);
       inside_cost += record_stmt_cost (cost_vec, n_perms, vec_perm,
-				       first_stmt_info, 0, vect_body);
+				       slp_node, SLP_TREE_VECTYPE (slp_node),
+				       0, vect_body);
 
       /* And adjust the number of loads performed.  This handles
 	 redundancies as well as loads that are later dead.  */
@@ -1690,6 +1689,9 @@ vect_finish_stmt_generation (vec_info *vinfo,
     }
   gsi_insert_before (gsi, vec_stmt, GSI_SAME_STMT);
   vect_finish_stmt_generation_1 (vinfo, stmt_info, vec_stmt);
+
+  if (gimple_has_mem_ops (vec_stmt) && need_ssa_update_p (cfun))
+    vinfo->any_known_not_updated_vssa = true;
 }
 
 /* We want to vectorize a call to combined function CFN with function
@@ -2222,12 +2224,26 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 {
   loop_vec_info loop_vinfo = dyn_cast <loop_vec_info> (vinfo);
   class loop *loop = loop_vinfo ? LOOP_VINFO_LOOP (loop_vinfo) : NULL;
-  stmt_vec_info first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
+  stmt_vec_info first_stmt_info;
+  unsigned int group_size;
+  unsigned HOST_WIDE_INT gap;
+  bool single_element_p;
+  if (STMT_VINFO_GROUPED_ACCESS (stmt_info))
+    {
+      first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
+      group_size = DR_GROUP_SIZE (first_stmt_info);
+      gap = DR_GROUP_GAP (first_stmt_info);
+      single_element_p = (stmt_info == first_stmt_info
+			  && !DR_GROUP_NEXT_ELEMENT (stmt_info));
+    }
+  else
+    {
+      first_stmt_info = stmt_info;
+      group_size = 1;
+      gap = 0;
+      single_element_p = true;
+    }
   dr_vec_info *first_dr_info = STMT_VINFO_DR_INFO (first_stmt_info);
-  unsigned int group_size = DR_GROUP_SIZE (first_stmt_info);
-  bool single_element_p = (stmt_info == first_stmt_info
-			   && !DR_GROUP_NEXT_ELEMENT (stmt_info));
-  unsigned HOST_WIDE_INT gap = DR_GROUP_GAP (first_stmt_info);
   poly_uint64 nunits = TYPE_VECTOR_SUBPARTS (vectype);
 
   /* True if the vectorized statements would access beyond the last
@@ -2329,6 +2345,11 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 		  else
 		    *memory_access_type = VMAT_ELEMENTWISE;
 		}
+	    }
+	  else if (cmp == 0 && loop_vinfo)
+	    {
+	      gcc_assert (vls_type == VLS_LOAD);
+	      *memory_access_type = VMAT_INVARIANT;
 	    }
 	  else
 	    {
@@ -2433,7 +2454,9 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
     }
 
   if (*memory_access_type == VMAT_GATHER_SCATTER
-      || *memory_access_type == VMAT_ELEMENTWISE)
+      || *memory_access_type == VMAT_ELEMENTWISE
+      || *memory_access_type == VMAT_STRIDED_SLP
+      || *memory_access_type == VMAT_INVARIANT)
     {
       *alignment_support_scheme = dr_unaligned_supported;
       *misalignment = DR_MISALIGNMENT_UNKNOWN;
@@ -2511,6 +2534,14 @@ get_load_store_type (vec_info  *vinfo, stmt_vec_info stmt_info,
   if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
     {
       *memory_access_type = VMAT_GATHER_SCATTER;
+      if (slp_node && SLP_TREE_CHILDREN (slp_node).length () == 0)
+	{
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "unsupported SLP gather/scatter without offset "
+			     "operands.\n");
+	  return false;
+	}
       if (!vect_check_gather_scatter (stmt_info, loop_vinfo, gs_info))
 	gcc_unreachable ();
       else if (!vect_is_simple_use (gs_info->offset, vinfo,
@@ -2551,7 +2582,7 @@ get_load_store_type (vec_info  *vinfo, stmt_vec_info stmt_info,
 	 is irrelevant for them.  */
       *alignment_support_scheme = dr_unaligned_supported;
     }
-  else if (STMT_VINFO_GROUPED_ACCESS (stmt_info))
+  else if (STMT_VINFO_GROUPED_ACCESS (stmt_info) || slp_node)
     {
       if (!get_group_load_store_type (vinfo, stmt_info, vectype, slp_node,
 				      masked_p,
@@ -5740,7 +5771,8 @@ vectorizable_shift (vec_info *vinfo,
 
   nunits_out = TYPE_VECTOR_SUBPARTS (vectype_out);
   nunits_in = TYPE_VECTOR_SUBPARTS (vectype);
-  if (maybe_ne (nunits_out, nunits_in))
+  if (maybe_ne (nunits_out, nunits_in)
+      || !tree_nop_conversion_p (TREE_TYPE (vectype_out), TREE_TYPE (vectype)))
     return false;
 
   stmt_vec_info op1_def_stmt_info;
@@ -6225,7 +6257,8 @@ vectorizable_operation (vec_info *vinfo,
 
   nunits_out = TYPE_VECTOR_SUBPARTS (vectype_out);
   nunits_in = TYPE_VECTOR_SUBPARTS (vectype);
-  if (maybe_ne (nunits_out, nunits_in))
+  if (maybe_ne (nunits_out, nunits_in)
+      || !tree_nop_conversion_p (TREE_TYPE (vectype_out), TREE_TYPE (vectype)))
     return false;
 
   tree vectype2 = NULL_TREE, vectype3 = NULL_TREE;
@@ -6243,7 +6276,9 @@ vectorizable_operation (vec_info *vinfo,
       is_invariant &= (dt[1] == vect_external_def
 		       || dt[1] == vect_constant_def);
       if (vectype2
-	  && maybe_ne (nunits_out, TYPE_VECTOR_SUBPARTS (vectype2)))
+	  && (maybe_ne (nunits_out, TYPE_VECTOR_SUBPARTS (vectype2))
+	      || !tree_nop_conversion_p (TREE_TYPE (vectype_out),
+					 TREE_TYPE (vectype2))))
 	return false;
     }
   if (op_type == ternary_op)
@@ -6259,7 +6294,9 @@ vectorizable_operation (vec_info *vinfo,
       is_invariant &= (dt[2] == vect_external_def
 		       || dt[2] == vect_constant_def);
       if (vectype3
-	  && maybe_ne (nunits_out, TYPE_VECTOR_SUBPARTS (vectype3)))
+	  && (maybe_ne (nunits_out, TYPE_VECTOR_SUBPARTS (vectype3))
+	      || !tree_nop_conversion_p (TREE_TYPE (vectype_out),
+					 TREE_TYPE (vectype3))))
 	return false;
     }
 
@@ -9141,31 +9178,37 @@ vectorizable_load (vec_info *vinfo,
 			     "hoisting out of the vectorized loop: %G", stmt);
 	  scalar_dest = copy_ssa_name (scalar_dest);
 	  tree rhs = unshare_expr (gimple_assign_rhs1 (stmt));
-	  gsi_insert_on_edge_immediate
-	    (loop_preheader_edge (loop),
-	     gimple_build_assign (scalar_dest, rhs));
+	  edge pe = loop_preheader_edge (loop);
+	  gphi *vphi = get_virtual_phi (loop->header);
+	  tree vuse;
+	  if (vphi)
+	    vuse = PHI_ARG_DEF_FROM_EDGE (vphi, pe);
+	  else
+	    vuse = gimple_vuse (gsi_stmt (*gsi));
+	  gimple *new_stmt = gimple_build_assign (scalar_dest, rhs);
+	  gimple_set_vuse (new_stmt, vuse);
+	  gsi_insert_on_edge_immediate (pe, new_stmt);
 	}
-      /* These copies are all equivalent, but currently the representation
-	 requires a separate STMT_VINFO_VEC_STMT for each one.  */
-      gimple_stmt_iterator gsi2 = *gsi;
-      gsi_next (&gsi2);
-      for (j = 0; j < ncopies; j++)
+      /* These copies are all equivalent.  */
+      if (hoist_p)
+	new_temp = vect_init_vector (vinfo, stmt_info, scalar_dest,
+				     vectype, NULL);
+      else
 	{
-	  if (hoist_p)
-	    new_temp = vect_init_vector (vinfo, stmt_info, scalar_dest,
-					 vectype, NULL);
-	  else
-	    new_temp = vect_init_vector (vinfo, stmt_info, scalar_dest,
-					 vectype, &gsi2);
-	  gimple *new_stmt = SSA_NAME_DEF_STMT (new_temp);
-	  if (slp)
-	    SLP_TREE_VEC_STMTS (slp_node).quick_push (new_stmt);
-	  else
-	    {
-	      if (j == 0)
-		*vec_stmt = new_stmt;
-	      STMT_VINFO_VEC_STMTS (stmt_info).safe_push (new_stmt);
-	    }
+	  gimple_stmt_iterator gsi2 = *gsi;
+	  gsi_next (&gsi2);
+	  new_temp = vect_init_vector (vinfo, stmt_info, scalar_dest,
+				       vectype, &gsi2);
+	}
+      gimple *new_stmt = SSA_NAME_DEF_STMT (new_temp);
+      if (slp)
+	for (j = 0; j < (int) SLP_TREE_NUMBER_OF_VEC_STMTS (slp_node); ++j)
+	  SLP_TREE_VEC_STMTS (slp_node).quick_push (new_stmt);
+      else
+	{
+	  for (j = 0; j < ncopies; ++j)
+	    STMT_VINFO_VEC_STMTS (stmt_info).safe_push (new_stmt);
+	  *vec_stmt = new_stmt;
 	}
       return true;
     }
@@ -9395,10 +9438,19 @@ vectorizable_load (vec_info *vinfo,
       || (!slp && memory_access_type == VMAT_CONTIGUOUS))
     grouped_load = false;
 
-  if (grouped_load)
+  if (grouped_load
+      || (slp && SLP_TREE_LOAD_PERMUTATION (slp_node).exists ()))
     {
-      first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
-      group_size = DR_GROUP_SIZE (first_stmt_info);
+      if (grouped_load)
+	{
+	  first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
+	  group_size = DR_GROUP_SIZE (first_stmt_info);
+	}
+      else
+	{
+	  first_stmt_info = stmt_info;
+	  group_size = 1;
+	}
       /* For SLP vectorization we directly vectorize a subchain
          without permutation.  */
       if (slp && ! SLP_TREE_LOAD_PERMUTATION (slp_node).exists ())

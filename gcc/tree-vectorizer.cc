@@ -1036,7 +1036,8 @@ vect_transform_loops (hash_table<simduid_to_vf> *&simduid_to_vf_htab,
   /* Epilogue of vectorized loop must be vectorized too.  */
   if (new_loop)
     {
-      loop_vinfo->any_known_not_updated_vssa = true;
+      loop_vec_info new_loop_vinfo = loop_vec_info_for_loop (new_loop);
+      new_loop_vinfo->any_known_not_updated_vssa = true;
       todo |= TODO_update_ssa_only_virtuals;
       todo |= vect_transform_loops (simduid_to_vf_htab, new_loop, NULL, fun);
     }

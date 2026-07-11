@@ -5882,7 +5882,9 @@ gfc_check_externals (gfc_namespace *ns)
 
   /* Turn errors into warnings if the user indicated this.  */
 
-  if (!pedantic && flag_allow_argument_mismatch)
+  if (!pedantic
+      && (flag_allow_argument_mismatch
+	  || (gfc_option.allow_std & GFC_STD_GNU)))
     gfc_errors_to_warnings (true);
 
   gfc_check_externals0 (ns);
