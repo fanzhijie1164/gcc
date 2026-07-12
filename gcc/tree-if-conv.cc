@@ -399,8 +399,7 @@ is_true_predicate (tree cond)
 static inline bool
 is_predicated (basic_block bb)
 {
-  return (bb_has_predicate (bb)
-	  && !is_true_predicate (bb_predicate (bb)));
+  return !is_true_predicate (bb_predicate (bb));
 }
 
 /* Parses the predicate COND and returns its comparison code and
@@ -2196,7 +2195,7 @@ insert_gimplified_predicates (loop_p loop)
     {
       basic_block bb = ifc_bbs[i];
       gimple_seq stmts;
-      if (bb_has_predicate (bb) && !is_predicated (bb))
+      if (!is_predicated (bb))
 	gcc_assert (bb_predicate_gimplified_stmts (bb) == NULL);
       if (!is_predicated (bb))
 	{
