@@ -763,6 +763,82 @@ vect_split_statement (vec_info *vinfo, stmt_vec_info stmt2_info, tree new_rhs,
     }
 }
 
+/* Look for the following pattern
+	X = x[i]
+	Y = y[i]
+	DIFF = X - Y
+	DAD = ABS_EXPR<DIFF>
+
+   ABS_STMT should point to a statement of code ABS_EXPR or ABSU_EXPR.
+   HALF_TYPE and UNPROM will be set should the statement be found to
+   be a widened operation.
+   DIFF_STMT will be set to the MINUS_EXPR
+   statement that precedes the ABS_STMT unless vect_widened_op_tree
+   succeeds.  */
+static bool
+vect_recog_absolute_difference (vec_info *vinfo, gassign *abs_stmt,
+				tree *half_type,
+				vect_unpromoted_value unprom[2],
+				gassign **diff_stmt)
+{
+  if (!abs_stmt)
+    return false;
+
+  /* FORNOW.  Can continue analyzing the def-use chain when this stmt in a phi
+     inside the loop (in case we are analyzing an outer-loop).  */
+  enum tree_code code = gimple_assign_rhs_code (abs_stmt);
+  if (code != ABS_EXPR && code != ABSU_EXPR)
+    return false;
+
+  tree abs_oprnd = gimple_assign_rhs1 (abs_stmt);
+  tree abs_type = TREE_TYPE (abs_oprnd);
+  if (!abs_oprnd)
+    return false;
+  if (!ANY_INTEGRAL_TYPE_P (abs_type)
+      || TYPE_OVERFLOW_WRAPS (abs_type)
+      || TYPE_UNSIGNED (abs_type))
+    return false;
+
+  /* Peel off conversions from the ABS input.  This can involve sign
+     changes (e.g. from an unsigned subtraction to a signed ABS input)
+     or signed promotion, but it can't include unsigned promotion.
+     (Note that ABS of an unsigned promotion should have been folded
+     away before now anyway.)  */
+  vect_unpromoted_value unprom_diff;
+  abs_oprnd = vect_look_through_possible_promotion (vinfo, abs_oprnd,
+						    &unprom_diff);
+  if (!abs_oprnd)
+    return false;
+  if (TYPE_PRECISION (unprom_diff.type) != TYPE_PRECISION (abs_type)
+      && TYPE_UNSIGNED (unprom_diff.type))
+    return false;
+
+  /* We then detect if the operand of abs_expr is defined by a minus_expr.  */
+  stmt_vec_info diff_stmt_vinfo = vect_get_internal_def (vinfo, abs_oprnd);
+  if (!diff_stmt_vinfo)
+    return false;
+
+  /* FORNOW.  Can continue analyzing the def-use chain when this stmt in a phi
+     inside the loop (in case we are analyzing an outer-loop).  */
+  if (vect_widened_op_tree (vinfo, diff_stmt_vinfo,
+			    MINUS_EXPR, WIDEN_MINUS_EXPR,
+			    false, 2, unprom, half_type))
+    return true;
+
+  /* Failed to find a widen operation so we check for a regular MINUS_EXPR.  */
+  gassign *diff = dyn_cast <gassign *> (STMT_VINFO_STMT (diff_stmt_vinfo));
+  if (diff_stmt && diff
+      && gimple_assign_rhs_code (diff) == MINUS_EXPR
+      && TYPE_OVERFLOW_UNDEFINED (TREE_TYPE (abs_oprnd)))
+    {
+      *diff_stmt = diff;
+      *half_type = NULL_TREE;
+      return true;
+    }
+
+  return false;
+}
+
 /* Convert UNPROM to TYPE and return the result, adding new statements
    to STMT_INFO's pattern definition statements if no better way is
    available.  VECTYPE is the vector form of TYPE.
@@ -1332,6 +1408,68 @@ vect_recog_sad_pattern (vec_info *vinfo,
 					      sad_oprnd[1], plus_oprnd1);
 
   return pattern_stmt;
+}
+
+/* Function vect_recog_abd_pattern
+
+   Try to find the following ABsolute Difference (ABD) pattern.  */
+
+static gimple *
+vect_recog_abd_pattern (vec_info *vinfo,
+			stmt_vec_info stmt_vinfo, tree *type_out)
+{
+  gassign *last_stmt = dyn_cast <gassign *> (STMT_VINFO_STMT (stmt_vinfo));
+  if (!last_stmt)
+    return NULL;
+
+  tree out_type = TREE_TYPE (gimple_assign_lhs (last_stmt));
+
+  vect_unpromoted_value unprom[2];
+  gassign *diff_stmt;
+  tree half_type;
+  if (!vect_recog_absolute_difference (vinfo, last_stmt, &half_type,
+				       unprom, &diff_stmt))
+    return NULL;
+
+  tree abd_in_type;
+
+  if (half_type)
+    {
+      abd_in_type = half_type;
+    }
+  else
+    {
+      unprom[0].op = gimple_assign_rhs1 (diff_stmt);
+      unprom[1].op = gimple_assign_rhs2 (diff_stmt);
+      abd_in_type = signed_type_for (out_type);
+    }
+
+  tree vectype_in = get_vectype_for_scalar_type (vinfo, abd_in_type);
+  if (!vectype_in)
+    return NULL;
+
+  internal_fn ifn = IFN_ABD;
+  tree vectype_out = vectype_in;
+
+  if (!direct_internal_fn_supported_p (ifn, vectype_in, OPTIMIZE_FOR_SPEED))
+    return NULL;
+
+  vect_pattern_detected ("vect_recog_abd_pattern", last_stmt);
+
+  tree abd_oprnds[2];
+  vect_convert_inputs (vinfo, stmt_vinfo, 2, abd_oprnds,
+		       abd_in_type, unprom, vectype_in);
+
+  *type_out = get_vectype_for_scalar_type (vinfo, out_type);
+
+  tree abd_result = vect_recog_temp_ssa_var (abd_in_type, NULL);
+  gcall *abd_stmt = gimple_build_call_internal (ifn, 2,
+						abd_oprnds[0], abd_oprnds[1]);
+  gimple_call_set_lhs (abd_stmt, abd_result);
+  gimple_set_location (abd_stmt, gimple_location (last_stmt));
+
+  return vect_convert_output (vinfo, stmt_vinfo, out_type, abd_stmt,
+				      vectype_out);
 }
 
 /* Recognize an operation that performs ORIG_CODE on widened inputs,
@@ -6151,6 +6289,7 @@ struct vect_recog_func
    taken which means usually the more complex one needs to preceed the
    less comples onex (widen_sum only after dot_prod or sad for example).  */
 static vect_recog_func vect_vect_recog_func_ptrs[] = {
+  { vect_recog_abd_pattern, "abd" },
   { vect_recog_over_widening_pattern, "over_widening" },
   /* Must come after over_widening, which narrows the shift as much as
      possible beforehand.  */
