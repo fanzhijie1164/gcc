@@ -34,10 +34,10 @@ main ()
 
   main1 ();
 
+#pragma GCC novector
   for (i = 0; i < N; i++)
     if (res[i] != a[i] >> 8)
       abort ();
 
   return 0;
 }
-

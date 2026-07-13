@@ -41,6 +41,7 @@ int main1 ()
     }
 
   /* Check results.  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (tmp1.strc_t.strc_s.b[i] != a[i])
@@ -54,6 +55,7 @@ int main1 ()
     }
 
   /* Check results.  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (tmp1.ptr_t->strc_s.c[i] != a[i])
@@ -73,4 +75,3 @@ int main (void)
           
 /* { dg-final { scan-tree-dump-times "vectorized 2 loops" 1 "vect" } } */
   
-

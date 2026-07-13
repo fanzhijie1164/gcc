@@ -23,6 +23,7 @@ void main1 ()
   /* check results: */  
   for (i = 0; i < 16; i++)
     {
+#pragma GCC novector
       for (j = 0; j < N; j++)
         {
            if (ia[2][6][j] != 5)
@@ -47,6 +48,7 @@ void main2 ()
   /* check results: */  
   for (i = 0; i < 16; i++)
     {
+#pragma GCC novector
       for (j = 2; j < N+2; j++)
         {
            if (ia[3][6][j] != 5)
@@ -73,6 +75,7 @@ void main3 ()
   /* check results: */  
   for (i = 0; i < 16; i++)
     {
+#pragma GCC novector
       for (j = 0; j < N; j++)
         {
            if (ic[2][1][6][j+1] != 5)

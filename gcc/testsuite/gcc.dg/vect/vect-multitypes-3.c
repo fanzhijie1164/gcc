@@ -39,6 +39,7 @@ int main1 (int n, int * __restrict__ pib,
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < n; i++)
     {
       if (ia[i] != pib[i] 
@@ -62,4 +63,3 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */
 /* { dg-final { scan-tree-dump-times "Alignment of access forced using versioning" 3 "vect" { target { vect_no_align && { ! vect_hw_misalign } } } } } */
 /* { dg-final { scan-tree-dump-times "Vectorizing an unaligned access" 3 "vect" { xfail { ! { vect_unaligned_possible && vect_align_stack_vars } } } } } */
-

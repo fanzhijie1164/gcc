@@ -19,6 +19,7 @@ main1 (void)
     }
 
   /* Check results.  */
+#pragma GCC novector
   for (i = 0; i <N; i++)
     {
       if (a[i] != b[N-1-i])
@@ -39,4 +40,3 @@ int main (void)
    the loop.  */
 /* { dg-final { scan-tree-dump-times "vectorized 0 loops" 1 "vect" { target { ! vect_perm } xfail { aarch64_sve && vect_variable_length } } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target vect_perm } } } */
-
