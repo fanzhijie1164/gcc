@@ -17,6 +17,7 @@ ayuv2yuyv_ref (int *d, int *src, int n)
   }
 
   /* Check results.  */
+#pragma GCC novector
   for(i=0;i<n/2;i++){
    if (dest[i*4 + 0] != (src[i*2 + 0])>>16
        || dest[i*4 + 1] != (src[i*2 + 1])>>8
@@ -41,6 +42,5 @@ int main ()
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 2 "vect" { target { vect_strided4 && vect_strided2 } } } } */
-
 
 

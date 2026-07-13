@@ -28,6 +28,7 @@ int main1 () {
     }
 
   /* check results: */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
        if (*q != a[i] || *p != b[i])
@@ -50,6 +51,7 @@ int main1 () {
   q = q1;
   p = p1;
   /* check results: */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
        if (*q != b[i] || *p != a[i])
@@ -69,4 +71,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 2 loops" 1 "vect" } } */
-

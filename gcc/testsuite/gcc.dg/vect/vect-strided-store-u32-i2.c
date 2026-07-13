@@ -22,6 +22,7 @@ main1 (void)
     }
 
   /* Check results.  */
+#pragma GCC novector
   for (i = 0; i < N/2; i++)
     {
       if (a[i*2] != b[i] + c[i]
@@ -41,4 +42,3 @@ int main (void)
 /* Needs interleaving support.  */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target { vect_interleave || vect_strided2 } } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 0 loops" 1 "vect" { xfail { vect_interleave || vect_strided2 } } } } */
-

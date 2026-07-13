@@ -21,9 +21,9 @@ main ()
   
   check_vect ();
   foo (6);
+#pragma GCC novector
   for (i = 0; i < N; i++)
     if (a[i] != i * 3 + 6)
       abort ();
   return 0;
 }
-

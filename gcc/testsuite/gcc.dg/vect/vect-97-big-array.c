@@ -32,6 +32,7 @@ int main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (s.p[i] != cb[i])
@@ -48,6 +49,7 @@ int main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (s.p[i] != s.q[i])

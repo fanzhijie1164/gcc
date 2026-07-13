@@ -45,6 +45,7 @@ int main (void)
 
   foo (dst, src, N, 8);
 
+#pragma GCC novector
   for (i = 0; i < N/2; i++)
     {
       if (dst[i] != A * src[i] + src[i+8])
@@ -55,4 +56,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "optimized: basic block" 1 "slp1" { target { vect64 && vect_hw_misalign } } } } */
-

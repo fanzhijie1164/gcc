@@ -36,6 +36,7 @@ int main (void)
 
   foo1 (N);
 
+#pragma GCC novector
   for (i=0; i<N; i++) {
     if (uresultX[i] != uX[i])
       abort ();
@@ -47,4 +48,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target vect_pack_trunc } } } */
-

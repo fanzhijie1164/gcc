@@ -47,6 +47,7 @@ int main (void)
 
   foo (125);
 
+#pragma GCC novector
   for (j = 0; j < M; j++)
     if (x_out_a[j] != 125
         || x_out_b[j] != 5)
@@ -56,5 +57,4 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "OUTER LOOP VECTORIZED" 1 "vect" { xfail { vect_no_align && { ! vect_hw_misalign } } } } } */
-
 

@@ -38,6 +38,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (res[i].a != a[i] + 3
@@ -58,4 +59,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target { vect_interleave || vect_strided2 } } } } */
-

@@ -34,6 +34,7 @@ int main1 (int n)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < n; i++)
     {
       if (sa[i+2] != sb[i] + sc[i] || ia[i+1] != ib[i] + ic[i])
@@ -56,6 +57,7 @@ int main2 (int n)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < n; i++)
     {
       if (sa[i] != sb[i] + sc[i] || ia[i+1] != ib[i] + ic[i])
@@ -79,4 +81,3 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 2 "vect" { target vect_element_align } } } */
 /* { dg-final { scan-tree-dump-times "unsupported unaligned access" 2 "vect" { xfail vect_element_align } } } */
 /* { dg-final { scan-tree-dump-times "Vectorizing an unaligned access" 3 "vect" { target vect_element_align xfail { ! vect_unaligned_possible } } } } */
-

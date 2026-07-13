@@ -17,6 +17,7 @@ foo (int *__restrict a,
   for (i = 0; i < n; i++)
     a[i] = b[i] * 2333;
 
+#pragma GCC novector
   for (i = 0; i < n; i++)
     if (a[i] != b[i] * 2333)
       abort ();
@@ -32,6 +33,7 @@ bar (int *__restrict a,
   for (i = 0; i < n; i++)
     a[i] = b[i] * (short) 2333;
 
+#pragma GCC novector
   for (i = 0; i < n; i++)
     if (a[i] != b[i] * (short) 2333)
       abort ();
@@ -60,4 +62,3 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 2 "vect" { target vect_widen_mult_hi_to_si } } } */
 /* { dg-final { scan-tree-dump-times {vect_recog_widen_mult_pattern: detected:[^\n]* 2333} 2 "vect" { target vect_widen_mult_hi_to_si_pattern } } } */
 /* { dg-final { scan-tree-dump-times {widen_mult pattern recognized:[^\n]* 2333} 2 "vect" { target vect_widen_mult_hi_to_si_pattern } } } */
-
