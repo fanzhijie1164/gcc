@@ -6380,6 +6380,8 @@ struct vect_recog_func
    taken which means usually the more complex one needs to preceed the
    less comples onex (widen_sum only after dot_prod or sad for example).  */
 static vect_recog_func vect_vect_recog_func_ptrs[] = {
+  { vect_recog_bitfield_ref_pattern, "bitfield_ref" },
+  { vect_recog_bit_insert_pattern, "bit_insert" },
   { vect_recog_abd_pattern, "abd" },
   { vect_recog_over_widening_pattern, "over_widening" },
   /* Must come after over_widening, which narrows the shift as much as
