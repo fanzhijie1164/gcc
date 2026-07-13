@@ -27,9 +27,9 @@ main ()
     a[i] = foo (a[i], i);
   if (a[0] != 1 || a[1] != 3)
     abort ();
+#pragma GCC novector
   for (i = 2; i < 1024; i++)
     if (a[i] != i)
       abort ();
   return 0;
 }
-

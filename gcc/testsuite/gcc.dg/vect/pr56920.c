@@ -12,9 +12,9 @@ main ()
   check_vect ();
   for (i = 0; i < 15; ++i)
     a[i] = (i * 2) % 15;
+#pragma GCC novector
   for (i = 0; i < 15; ++i)
     if (a[i] != (i * 2) % 15)
       abort ();
   return 0;
 }
-

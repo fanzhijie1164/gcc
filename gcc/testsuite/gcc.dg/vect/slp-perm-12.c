@@ -42,6 +42,7 @@ int main()
 
   test (a, b);
 
+#pragma GCC novector
   for (i = 0; i < 64; ++i)
     if (a[i] != 253)
       abort ();

@@ -9,6 +9,7 @@ main ()
 
   for (; a; a--)
     for (d = 1; d <= 0; d++)
+#pragma GCC novector
       for (; d;)
 	if (h)
 	  {
@@ -25,4 +26,3 @@ main ()
 
   return 0;
 }
-

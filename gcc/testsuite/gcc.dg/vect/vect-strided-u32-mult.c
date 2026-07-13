@@ -29,6 +29,7 @@ main1 (unsigned short *arr, ii *iarr)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (res[i] != arr[i]
@@ -61,4 +62,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target vect_strided2 } } } */
-

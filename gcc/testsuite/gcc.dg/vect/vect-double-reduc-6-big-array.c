@@ -49,6 +49,7 @@ int main ()
 
   foo ();
 
+#pragma GCC novector
   for (k = 0; k < K; k++)
     if (out[k] != check_result[k])
       abort ();
@@ -57,4 +58,3 @@ int main ()
 }
 
 /* { dg-final { scan-tree-dump-times "OUTER LOOP VECTORIZED" 1 "vect" } } */
-
