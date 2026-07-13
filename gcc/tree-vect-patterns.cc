@@ -1355,40 +1355,34 @@ vect_recog_sad_pattern (vec_info *vinfo,
   /* FORNOW.  Can continue analyzing the def-use chain when this stmt in a phi
      inside the loop (in case we are analyzing an outer-loop).  */
   gassign *abs_stmt = dyn_cast <gassign *> (abs_stmt_vinfo->stmt);
-  if (!abs_stmt
-      || (gimple_assign_rhs_code (abs_stmt) != ABS_EXPR
-	  && gimple_assign_rhs_code (abs_stmt) != ABSU_EXPR))
-    return NULL;
-
-  tree abs_oprnd = gimple_assign_rhs1 (abs_stmt);
-  tree abs_type = TREE_TYPE (abs_oprnd);
-  if (TYPE_UNSIGNED (abs_type))
-    return NULL;
-
-  /* Peel off conversions from the ABS input.  This can involve sign
-     changes (e.g. from an unsigned subtraction to a signed ABS input)
-     or signed promotion, but it can't include unsigned promotion.
-     (Note that ABS of an unsigned promotion should have been folded
-     away before now anyway.)  */
-  vect_unpromoted_value unprom_diff;
-  abs_oprnd = vect_look_through_possible_promotion (vinfo, abs_oprnd,
-						    &unprom_diff);
-  if (!abs_oprnd)
-    return NULL;
-  if (TYPE_PRECISION (unprom_diff.type) != TYPE_PRECISION (abs_type)
-      && TYPE_UNSIGNED (unprom_diff.type))
-    return NULL;
-
-  /* We then detect if the operand of abs_expr is defined by a minus_expr.  */
-  stmt_vec_info diff_stmt_vinfo = vect_get_internal_def (vinfo, abs_oprnd);
-  if (!diff_stmt_vinfo)
-    return NULL;
-
-  /* FORNOW.  Can continue analyzing the def-use chain when this stmt in a phi
-     inside the loop (in case we are analyzing an outer-loop).  */
   vect_unpromoted_value unprom[2];
-  if (!vect_widened_op_tree (vinfo, diff_stmt_vinfo, MINUS_EXPR, WIDEN_MINUS_EXPR,
-			     false, 2, unprom, &half_type))
+
+  if (!abs_stmt)
+    {
+      gcall *abd_stmt = dyn_cast <gcall *> (abs_stmt_vinfo->stmt);
+      if (!abd_stmt
+	  || !gimple_call_internal_p (abd_stmt)
+	  || gimple_call_num_args (abd_stmt) != 2)
+	return NULL;
+
+      tree abd_oprnd0 = gimple_call_arg (abd_stmt, 0);
+      tree abd_oprnd1 = gimple_call_arg (abd_stmt, 1);
+
+      if (gimple_call_internal_fn (abd_stmt) == IFN_ABD
+	  || gimple_call_internal_fn (abd_stmt) == IFN_VEC_WIDEN_ABD)
+	{
+	  unprom[0].op = abd_oprnd0;
+	  unprom[0].type = TREE_TYPE (abd_oprnd0);
+	  unprom[1].op = abd_oprnd1;
+	  unprom[1].type = TREE_TYPE (abd_oprnd1);
+	}
+      else
+	return NULL;
+
+      half_type = unprom[0].type;
+    }
+  else if (!vect_recog_absolute_difference (vinfo, abs_stmt, &half_type,
+					    unprom, NULL))
     return NULL;
 
   vect_pattern_detected ("vect_recog_sad_pattern", last_stmt);
