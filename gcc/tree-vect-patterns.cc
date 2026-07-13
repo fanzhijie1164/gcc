@@ -5241,18 +5241,29 @@ vect_recog_bool_pattern (vec_info *vinfo,
       if (get_vectype_for_scalar_type (vinfo, type) == NULL_TREE)
 	return NULL;
 
-      if (!check_bool_pattern (var, vinfo, bool_stmts))
+      if (check_bool_pattern (var, vinfo, bool_stmts))
+	var = adjust_bool_stmts (vinfo, bool_stmts, type, stmt_vinfo);
+      else if (integer_type_for_mask (var, vinfo))
 	return NULL;
 
-      rhs = adjust_bool_stmts (vinfo, bool_stmts, type, stmt_vinfo);
+      tree lhs_var = vect_recog_temp_ssa_var (boolean_type_node, NULL);
+      pattern_stmt = gimple_build_assign (lhs_var, NE_EXPR, var,
+					  build_zero_cst (TREE_TYPE (var)));
+
+      tree new_vectype
+	= get_mask_type_for_scalar_type (vinfo, TREE_TYPE (var));
+      if (!new_vectype)
+	return NULL;
+
+      new_vectype = truth_type_for (new_vectype);
+      append_pattern_def_seq (vinfo, stmt_vinfo, pattern_stmt, new_vectype,
+			      TREE_TYPE (var));
 
       lhs = vect_recog_temp_ssa_var (TREE_TYPE (lhs), NULL);
-      pattern_stmt 
-	  = gimple_build_assign (lhs, COND_EXPR,
-				 build2 (NE_EXPR, boolean_type_node,
-					 rhs, build_int_cst (type, 0)),
-				 gimple_assign_rhs2 (last_stmt),
-				 gimple_assign_rhs3 (last_stmt));
+      pattern_stmt
+	= gimple_build_assign (lhs, COND_EXPR, lhs_var,
+			       gimple_assign_rhs2 (last_stmt),
+			       gimple_assign_rhs3 (last_stmt));
       *type_out = vectype;
       vect_pattern_detected ("vect_recog_bool_pattern", last_stmt);
 
