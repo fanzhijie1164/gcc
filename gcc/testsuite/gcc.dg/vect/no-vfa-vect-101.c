@@ -30,6 +30,7 @@ int main1 (int x, int y) {
     }
 
   /* check results: */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
        if (p->a[i] != a[i] || p->b[i] != b[i])
@@ -48,4 +49,3 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 0 "vect" } } */
 /* { dg-final { scan-tree-dump-times "can't determine dependence" 1 "vect" { target { ! vect_multiple_sizes } } } } */
 /* { dg-final { scan-tree-dump "can't determine dependence" "vect" { target vect_multiple_sizes } } } */
-

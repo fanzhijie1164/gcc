@@ -21,6 +21,7 @@ int main (void)
 
   foo(100);
 
+#pragma GCC novector
   for (i = 0; i < 100; ++i) {
     if (ca[i] != 2)
       abort();

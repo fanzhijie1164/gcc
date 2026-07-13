@@ -22,9 +22,9 @@ main ()
   foo ();
   if (data[0] != 3 || data[7] != 1)
     abort ();
+#pragma GCC novector
   for (i = 1; i < 4; ++i)
     if (data[i] != i || data[i + 3] != i)
       abort ();
   return 0;
 }
-

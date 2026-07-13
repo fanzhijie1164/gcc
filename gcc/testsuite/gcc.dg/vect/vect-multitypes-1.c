@@ -39,6 +39,7 @@ __attribute__ ((noinline)) int main1 (int n)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < n; i++)
     {
       if (sa[i + NSHORTS - 1] != sb[i] || ia[i + NINTS - 1] != ib[i + 1])
@@ -69,6 +70,7 @@ __attribute__ ((noinline)) int main2 (int n)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < n; i++)
     {
       if (sa[i + NINTS - 1] != sb[i + 1] || ia[i + NINTS - 1] != ib[i])
@@ -91,4 +93,3 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 2 "vect" { xfail { vect_no_align && { ! vect_hw_misalign } } } } } */
 /* { dg-final { scan-tree-dump-times "Alignment of access forced using peeling" 2 "vect" { xfail { { ! vect_unaligned_possible } || vect_sizes_32B_16B } } } } */
 /* { dg-final { scan-tree-dump-times "Vectorizing an unaligned access" 4 "vect" { target { vect_no_align && { { ! vect_hw_misalign } && vect_sizes_32B_16B } } }} } */
-

@@ -22,9 +22,9 @@ int main (void)
   int i;
   check_vect ();
   foo ();
+#pragma GCC novector
   for (i = 0; i < 100; i++)
     if (f[i]!=1) 
       abort ();
   return 0;
 }
-
