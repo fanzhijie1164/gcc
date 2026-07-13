@@ -1431,17 +1431,19 @@ vect_recog_abd_pattern (vec_info *vinfo,
 				       unprom, &diff_stmt))
     return NULL;
 
-  tree abd_in_type;
+  tree abd_in_type, abd_out_type;
 
   if (half_type)
     {
       abd_in_type = half_type;
+      abd_out_type = abd_in_type;
     }
   else
     {
       unprom[0].op = gimple_assign_rhs1 (diff_stmt);
       unprom[1].op = gimple_assign_rhs2 (diff_stmt);
       abd_in_type = signed_type_for (out_type);
+      abd_out_type = abd_in_type;
     }
 
   tree vectype_in = get_vectype_for_scalar_type (vinfo, abd_in_type);
@@ -1451,7 +1453,32 @@ vect_recog_abd_pattern (vec_info *vinfo,
   internal_fn ifn = IFN_ABD;
   tree vectype_out = vectype_in;
 
-  if (!direct_internal_fn_supported_p (ifn, vectype_in, OPTIMIZE_FOR_SPEED))
+  if (TYPE_PRECISION (out_type) >= TYPE_PRECISION (abd_in_type) * 2
+      && stmt_vinfo->min_output_precision >= TYPE_PRECISION (abd_in_type) * 2)
+    {
+      tree mid_type
+	= build_nonstandard_integer_type (TYPE_PRECISION (abd_in_type) * 2,
+					  TYPE_UNSIGNED (abd_in_type));
+      tree mid_vectype = get_vectype_for_scalar_type (vinfo, mid_type);
+
+      code_helper dummy_code;
+      int dummy_int;
+      auto_vec<tree> dummy_vec;
+      if (mid_vectype
+	  && supportable_widening_operation (vinfo, IFN_VEC_WIDEN_ABD,
+					     stmt_vinfo, mid_vectype, vectype_in,
+					     &dummy_code, &dummy_code,
+					     &dummy_int, &dummy_vec))
+	{
+	  ifn = IFN_VEC_WIDEN_ABD;
+	  abd_out_type = mid_type;
+	  vectype_out = mid_vectype;
+	}
+    }
+
+  if (ifn == IFN_ABD
+      && !direct_internal_fn_supported_p (ifn, vectype_in,
+					  OPTIMIZE_FOR_SPEED))
     return NULL;
 
   vect_pattern_detected ("vect_recog_abd_pattern", last_stmt);
@@ -1462,14 +1489,24 @@ vect_recog_abd_pattern (vec_info *vinfo,
 
   *type_out = get_vectype_for_scalar_type (vinfo, out_type);
 
-  tree abd_result = vect_recog_temp_ssa_var (abd_in_type, NULL);
+  tree abd_result = vect_recog_temp_ssa_var (abd_out_type, NULL);
   gcall *abd_stmt = gimple_build_call_internal (ifn, 2,
 						abd_oprnds[0], abd_oprnds[1]);
   gimple_call_set_lhs (abd_stmt, abd_result);
   gimple_set_location (abd_stmt, gimple_location (last_stmt));
 
-  return vect_convert_output (vinfo, stmt_vinfo, out_type, abd_stmt,
-				      vectype_out);
+  gimple *stmt = abd_stmt;
+  if (TYPE_PRECISION (abd_in_type) == TYPE_PRECISION (abd_out_type)
+      && TYPE_PRECISION (abd_out_type) < TYPE_PRECISION (out_type)
+      && !TYPE_UNSIGNED (abd_out_type))
+    {
+      tree unsign = unsigned_type_for (abd_out_type);
+      tree unsign_vectype = get_vectype_for_scalar_type (vinfo, unsign);
+      stmt = vect_convert_output (vinfo, stmt_vinfo, unsign, stmt,
+				  unsign_vectype);
+    }
+
+  return vect_convert_output (vinfo, stmt_vinfo, out_type, stmt, vectype_out);
 }
 
 /* Recognize an operation that performs ORIG_CODE on widened inputs,
@@ -1543,7 +1580,7 @@ vect_recog_widen_op_pattern (vec_info *vinfo,
       vecctype = get_vectype_for_scalar_type (vinfo, ctype);
     }
 
-  enum tree_code dummy_code;
+  code_helper dummy_code;
   int dummy_int;
   auto_vec<tree> dummy_vec;
   if (!vectype
@@ -1608,6 +1645,66 @@ vect_recog_widen_minus_pattern (vec_info *vinfo, stmt_vec_info last_stmt_info,
   return vect_recog_widen_op_pattern (vinfo, last_stmt_info, type_out,
 				      MINUS_EXPR, WIDEN_MINUS_EXPR, false,
 				      "vect_recog_widen_minus_pattern");
+}
+
+/* Try to detect abd on widened inputs, converting IFN_ABD
+   to IFN_VEC_WIDEN_ABD.  */
+static gimple *
+vect_recog_widen_abd_pattern (vec_info *vinfo, stmt_vec_info stmt_vinfo,
+			      tree *type_out)
+{
+  gassign *last_stmt = dyn_cast <gassign *> (STMT_VINFO_STMT (stmt_vinfo));
+  if (!last_stmt || !CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (last_stmt)))
+    return NULL;
+
+  tree last_rhs = gimple_assign_rhs1 (last_stmt);
+  tree in_type = TREE_TYPE (last_rhs);
+  tree out_type = TREE_TYPE (gimple_assign_lhs (last_stmt));
+  if (!INTEGRAL_TYPE_P (in_type)
+      || !INTEGRAL_TYPE_P (out_type)
+      || TYPE_PRECISION (in_type) * 2 != TYPE_PRECISION (out_type)
+      || !TYPE_UNSIGNED (in_type))
+    return NULL;
+
+  vect_unpromoted_value unprom;
+  tree op = vect_look_through_possible_promotion (vinfo, last_rhs, &unprom);
+  if (!op || TYPE_PRECISION (TREE_TYPE (op)) != TYPE_PRECISION (in_type))
+    return NULL;
+
+  stmt_vec_info abd_pattern_vinfo = vect_get_internal_def (vinfo, op);
+  if (!abd_pattern_vinfo)
+    return NULL;
+
+  abd_pattern_vinfo = vect_stmt_to_vectorize (abd_pattern_vinfo);
+  gcall *abd_stmt = dyn_cast <gcall *> (STMT_VINFO_STMT (abd_pattern_vinfo));
+  if (!abd_stmt
+      || !gimple_call_internal_p (abd_stmt)
+      || gimple_call_internal_fn (abd_stmt) != IFN_ABD)
+    return NULL;
+
+  tree vectype_in = get_vectype_for_scalar_type (vinfo, in_type);
+  tree vectype_out = get_vectype_for_scalar_type (vinfo, out_type);
+
+  code_helper dummy_code;
+  int dummy_int;
+  auto_vec<tree> dummy_vec;
+  if (!supportable_widening_operation (vinfo, IFN_VEC_WIDEN_ABD, stmt_vinfo,
+				       vectype_out, vectype_in,
+				       &dummy_code, &dummy_code,
+				       &dummy_int, &dummy_vec))
+    return NULL;
+
+  vect_pattern_detected ("vect_recog_widen_abd_pattern", last_stmt);
+  *type_out = vectype_out;
+
+  tree abd_oprnd0 = gimple_call_arg (abd_stmt, 0);
+  tree abd_oprnd1 = gimple_call_arg (abd_stmt, 1);
+  tree widen_abd_result = vect_recog_temp_ssa_var (out_type, NULL);
+  gcall *widen_abd_stmt = gimple_build_call_internal (IFN_VEC_WIDEN_ABD, 2,
+						      abd_oprnd0, abd_oprnd1);
+  gimple_call_set_lhs (widen_abd_stmt, widen_abd_result);
+  gimple_set_location (widen_abd_stmt, gimple_location (last_stmt));
+  return widen_abd_stmt;
 }
 
 /* Function vect_recog_popcount_pattern
@@ -6318,6 +6415,7 @@ static vect_recog_func vect_vect_recog_func_ptrs[] = {
   { vect_recog_mask_conversion_pattern, "mask_conversion" },
   { vect_recog_widen_plus_pattern, "widen_plus" },
   { vect_recog_widen_minus_pattern, "widen_minus" },
+  { vect_recog_widen_abd_pattern, "widen_abd" },
 };
 
 const unsigned int NUM_PATTERNS = ARRAY_SIZE (vect_vect_recog_func_ptrs);
@@ -6661,4 +6759,21 @@ vect_pattern_recog (vec_info *vinfo)
 
   /* After this no more add_stmt calls are allowed.  */
   vinfo->stmt_vec_info_ro = true;
+}
+
+/* Build a GIMPLE_ASSIGN or GIMPLE_CALL with the tree_code,
+   or internal_fn contained in CH, respectively.  */
+
+gimple *
+vect_gimple_build (tree lhs, code_helper ch, tree op0, tree op1)
+{
+  gcc_assert (op0 != NULL_TREE);
+  if (ch.is_tree_code ())
+    return gimple_build_assign (lhs, (tree_code) ch, op0, op1);
+
+  gcc_assert (ch.is_internal_fn ());
+  gimple *stmt = gimple_build_call_internal
+    (as_internal_fn ((combined_fn) ch), op1 == NULL_TREE ? 1 : 2, op0, op1);
+  gimple_call_set_lhs (stmt, lhs);
+  return stmt;
 }
