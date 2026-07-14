@@ -2128,15 +2128,9 @@ static bool
 vect_can_peel_nonlinear_iv_p (loop_vec_info loop_vinfo,
 			      stmt_vec_info stmt_info)
 {
-  (void) loop_vinfo;
-  (void) stmt_info;
-  return false;
-}
-#if 0
-static bool
-vect_can_peel_nonlinear_iv_p_unused (loop_vec_info loop_vinfo,
-				     stmt_vec_info stmt_info)
-{
+  enum vect_induction_op_type induction_type
+    = STMT_VINFO_LOOP_PHI_EVOLUTION_TYPE (stmt_info);
+  tree niters_skip;
   /* Init_expr will be update by vect_update_ivs_after_vectorizer,
      if niters or vf is unkown:
      For shift, when shift mount >= precision, there would be UD.
@@ -2197,7 +2191,6 @@ vect_can_peel_nonlinear_iv_p_unused (loop_vec_info loop_vinfo,
 
   return true;
 }
-#endif
 
 /* Function vect_can_advance_ivs_p
 
