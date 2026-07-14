@@ -10611,7 +10611,7 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
      loop closed PHI nodes on the exit.  */
   if (LOOP_VINFO_SCALAR_LOOP (loop_vinfo))
     {
-      e = single_exit (LOOP_VINFO_SCALAR_LOOP (loop_vinfo));
+      e = LOOP_VINFO_SCALAR_IV_EXIT (loop_vinfo);
       if (! single_pred_p (e->dest))
 	{
 	  split_loop_exit_edge (e, true);
