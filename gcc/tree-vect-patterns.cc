@@ -1531,7 +1531,7 @@ vect_recog_abd_pattern (vec_info *vinfo,
 static gimple *
 vect_recog_widen_op_pattern (vec_info *vinfo,
 			     stmt_vec_info last_stmt_info, tree *type_out,
-			     tree_code orig_code, tree_code wide_code,
+			     tree_code orig_code, code_helper wide_code,
 			     bool shift_p, const char *name)
 {
   gimple *last_stmt = last_stmt_info->stmt;
@@ -1595,8 +1595,8 @@ vect_recog_widen_op_pattern (vec_info *vinfo,
 		       2, oprnd, half_type, unprom, vectype);
 
   tree var = vect_recog_temp_ssa_var (itype, NULL);
-  gimple *pattern_stmt = gimple_build_assign (var, wide_code,
-					      oprnd[0], oprnd[1]);
+  gimple *pattern_stmt = vect_gimple_build (var, wide_code,
+					     oprnd[0], oprnd[1]);
 
   if (vecctype != vecitype)
     pattern_stmt = vect_convert_output (vinfo, last_stmt_info, ctype,
@@ -1619,25 +1619,25 @@ vect_recog_widen_mult_pattern (vec_info *vinfo, stmt_vec_info last_stmt_info,
 }
 
 /* Try to detect addition on widened inputs, converting PLUS_EXPR
-   to WIDEN_PLUS_EXPR.  See vect_recog_widen_op_pattern for details.  */
+   to IFN_VEC_WIDEN_PLUS.  See vect_recog_widen_op_pattern for details.  */
 
 static gimple *
 vect_recog_widen_plus_pattern (vec_info *vinfo, stmt_vec_info last_stmt_info,
 			       tree *type_out)
 {
   return vect_recog_widen_op_pattern (vinfo, last_stmt_info, type_out,
-				      PLUS_EXPR, WIDEN_PLUS_EXPR, false,
+				      PLUS_EXPR, IFN_VEC_WIDEN_PLUS, false,
 				      "vect_recog_widen_plus_pattern");
 }
 
 /* Try to detect subtraction on widened inputs, converting MINUS_EXPR
-   to WIDEN_MINUS_EXPR.  See vect_recog_widen_op_pattern for details.  */
+   to IFN_VEC_WIDEN_MINUS.  See vect_recog_widen_op_pattern for details.  */
 static gimple *
 vect_recog_widen_minus_pattern (vec_info *vinfo, stmt_vec_info last_stmt_info,
 			       tree *type_out)
 {
   return vect_recog_widen_op_pattern (vinfo, last_stmt_info, type_out,
-				      MINUS_EXPR, WIDEN_MINUS_EXPR, false,
+				      MINUS_EXPR, IFN_VEC_WIDEN_MINUS, false,
 				      "vect_recog_widen_minus_pattern");
 }
 
