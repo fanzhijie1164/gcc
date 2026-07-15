@@ -541,6 +541,7 @@ vect_analyze_scalar_cycles_1 (loop_vec_info loop_vinfo, class loop *loop,
 	continue;
 
       STMT_VINFO_DEF_TYPE (stmt_vinfo) = vect_unknown_def_type;
+      STMT_VINFO_LOOP_PHI_EVOLUTION_TYPE (stmt_vinfo) = vect_step_op_add;
 
       /* Analyze the evolution function.  */
       access_fn = analyze_scalar_evolution (loop, def);
@@ -8742,6 +8743,81 @@ vect_can_vectorize_without_simd_p (code_helper code)
 	  && vect_can_vectorize_without_simd_p (tree_code (code)));
 }
 
+/* Peel INIT_EXPR by SKIP_NITERS for INDUCTION_TYPE.  */
+
+tree
+vect_peel_nonlinear_iv_init (gimple_seq *stmts, tree init_expr,
+			     tree skip_niters, tree step_expr,
+			     enum vect_induction_op_type induction_type,
+			     bool early_exit_p)
+{
+  gcc_assert (TREE_CODE (skip_niters) == INTEGER_CST || early_exit_p);
+  tree type = TREE_TYPE (init_expr);
+  unsigned prec = TYPE_PRECISION (type);
+  switch (induction_type)
+    {
+    case vect_step_op_neg:
+      /* A negating IV has the same value at an early-exit iteration.  */
+      if (early_exit_p)
+	break;
+
+      if (TREE_INT_CST_LOW (skip_niters) % 2)
+	init_expr = gimple_build (stmts, NEGATE_EXPR, type, init_expr);
+      break;
+
+    case vect_step_op_shr:
+    case vect_step_op_shl:
+      skip_niters = fold_build1 (NOP_EXPR, type, skip_niters);
+      step_expr = fold_build1 (NOP_EXPR, type, step_expr);
+      step_expr = fold_build2 (MULT_EXPR, type, step_expr, skip_niters);
+      /* Avoid undefined shifts.  The scalar loop semantics yield zero for
+	 lshr/ashl and the sign bit for ashr in this case.  */
+      if ((!tree_fits_uhwi_p (step_expr)
+	   || tree_to_uhwi (step_expr) >= prec)
+	  && !early_exit_p)
+	{
+	  if (induction_type == vect_step_op_shl || TYPE_UNSIGNED (type))
+	    init_expr = build_zero_cst (type);
+	  else
+	    init_expr = gimple_build (stmts, RSHIFT_EXPR, type, init_expr,
+				      wide_int_to_tree (type, prec - 1));
+	}
+      else
+	{
+	  init_expr = fold_build2 ((induction_type == vect_step_op_shr
+				    ? RSHIFT_EXPR : LSHIFT_EXPR),
+				   type, init_expr, step_expr);
+	  init_expr = force_gimple_operand (init_expr, stmts, false, NULL);
+	}
+      break;
+
+    case vect_step_op_mul:
+      {
+	/* Multiplicative IVs with early exits are rejected by analysis.  */
+	gcc_assert (TREE_CODE (skip_niters) == INTEGER_CST);
+	tree utype = unsigned_type_for (type);
+	init_expr = gimple_convert (stmts, utype, init_expr);
+	wide_int skipn = wi::to_wide (skip_niters);
+	wide_int begin = wi::to_wide (step_expr);
+	auto_mpz base, exp, mod, res;
+	wi::to_mpz (begin, base, TYPE_SIGN (type));
+	wi::to_mpz (skipn, exp, UNSIGNED);
+	mpz_ui_pow_ui (mod, 2, TYPE_PRECISION (type));
+	mpz_powm (res, base, exp, mod);
+	begin = wi::from_mpz (utype, res, true);
+	tree mult_expr = wide_int_to_tree (utype, begin);
+	init_expr = gimple_build (stmts, MULT_EXPR, utype, init_expr, mult_expr);
+	init_expr = gimple_convert (stmts, type, init_expr);
+	}
+      break;
+
+    default:
+	 gcc_unreachable ();
+    }
+
+  return init_expr;
+}
+
 /* Function vectorizable_induction
 
    Check if STMT_INFO performs an induction computation that can be vectorized.
@@ -9815,8 +9891,7 @@ vectorizable_live_operation (vec_info *vinfo,
 		 to the latch then we're restarting the iteration in the
 		 scalar loop.  So get the first live value.  */
 	      bool early_break_first_element_p
-		= (all_exits_as_early_p || !main_exit_edge)
-		  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def;
+		= all_exits_as_early_p || !main_exit_edge;
 	      if (early_break_first_element_p)
 		{
 		  tmp_vec_lhs = vec_lhs0;
@@ -10597,6 +10672,96 @@ move_early_exit_stmts (loop_vec_info loop_vinfo)
 	SET_PHI_ARG_DEF (phi, e->dest_idx, last_seen_vuse);
 }
 
+/* Generate adjustment code for early break scalar IVs filling in the value
+   we created earlier for LOOP_VINFO_EARLY_BRK_NITERS_VAR.  */
+
+static void
+vect_update_ivs_after_vectorizer_for_early_breaks (loop_vec_info loop_vinfo)
+{
+  DUMP_VECT_SCOPE ("vect_update_ivs_after_vectorizer_for_early_breaks");
+
+  if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return;
+
+  gcc_assert (LOOP_VINFO_EARLY_BRK_NITERS_VAR (loop_vinfo));
+
+  tree phi_var = LOOP_VINFO_EARLY_BRK_NITERS_VAR (loop_vinfo);
+  tree niters_skip = LOOP_VINFO_MASK_SKIP_NITERS (loop_vinfo);
+  poly_uint64 vf = LOOP_VINFO_VECT_FACTOR (loop_vinfo);
+  tree ty_var = TREE_TYPE (phi_var);
+  auto loop = LOOP_VINFO_LOOP (loop_vinfo);
+  tree induc_var = niters_skip ? copy_ssa_name (phi_var) : phi_var;
+
+  auto induction_phi = create_phi_node (induc_var, loop->header);
+  tree induc_def = PHI_RESULT (induction_phi);
+
+  /* Create the IV update inside the loop.  */
+  gimple_seq init_stmts = NULL;
+  gimple_seq stmts = NULL;
+  gimple_seq iv_stmts = NULL;
+  tree tree_vf = build_int_cst (ty_var, vf);
+
+  /* For loop length targets use SELECT_VL, since VF may change between
+     iterations.  */
+  if (LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo))
+    {
+      vec_loop_lens *lens = &LOOP_VINFO_LENS (loop_vinfo);
+      tree_vf = vect_get_loop_len (loop_vinfo, lens, 1, 0);
+    }
+
+  tree iter_var;
+  if (POINTER_TYPE_P (ty_var))
+    {
+      tree offset = gimple_convert (&stmts, sizetype, tree_vf);
+      iter_var = gimple_build (&stmts, POINTER_PLUS_EXPR, ty_var, induc_def,
+			       gimple_convert (&stmts, sizetype, offset));
+    }
+  else
+    {
+      tree offset = gimple_convert (&stmts, ty_var, tree_vf);
+      iter_var = gimple_build (&stmts, PLUS_EXPR, ty_var, induc_def, offset);
+    }
+
+  tree init_var = build_zero_cst (ty_var);
+  if (niters_skip)
+    init_var = gimple_build (&init_stmts, MINUS_EXPR, ty_var, init_var,
+			     gimple_convert (&init_stmts, ty_var, niters_skip));
+
+  add_phi_arg (induction_phi, iter_var,
+	       loop_latch_edge (loop), UNKNOWN_LOCATION);
+  add_phi_arg (induction_phi, init_var,
+	       loop_preheader_edge (loop), UNKNOWN_LOCATION);
+
+  /* Find the first insertion point in the BB.  */
+  auto pe = loop_preheader_edge (loop);
+
+  /* If we have done peeling, calculate the final IV adjustment.  */
+  if (niters_skip)
+    {
+      induc_def = gimple_build (&iv_stmts, MAX_EXPR, TREE_TYPE (induc_def),
+				induc_def,
+				build_zero_cst (TREE_TYPE (induc_def)));
+      auto stmt = gimple_build_assign (phi_var, induc_def);
+      gimple_seq_add_stmt_without_update (&iv_stmts, stmt);
+      basic_block exit_bb = NULL;
+      for (auto e : get_loop_exit_edges (loop))
+	if (e != LOOP_VINFO_IV_EXIT (loop_vinfo))
+	  {
+	    exit_bb = e->dest;
+	    break;
+	  }
+
+      gcc_assert (exit_bb);
+      auto exit_gsi = gsi_after_labels (exit_bb);
+      gsi_insert_seq_before (&exit_gsi, iv_stmts, GSI_SAME_STMT);
+    }
+  auto psi = gsi_last_nondebug_bb (pe->src);
+  gsi_insert_seq_after (&psi, init_stmts, GSI_LAST_NEW_STMT);
+  basic_block bb = loop->header;
+  auto si = gsi_after_labels (bb);
+  gsi_insert_seq_before (&si, stmts, GSI_SAME_STMT);
+}
+
 /* Function vect_transform_loop.
 
    The analysis phase has determined that the loop is vectorizable.
@@ -10731,7 +10896,10 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
   /* Handle any code motion that we need to for early-break vectorization after
      we've done peeling but just before we start vectorizing.  */
   if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
-    move_early_exit_stmts (loop_vinfo);
+    {
+      vect_update_ivs_after_vectorizer_for_early_breaks (loop_vinfo);
+      move_early_exit_stmts (loop_vinfo);
+    }
 
   /* Schedule the SLP instances first, then handle loop vectorization
      below.  */
