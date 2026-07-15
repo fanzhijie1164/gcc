@@ -10785,6 +10785,10 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
   gimple *stmt;
   bool check_profitability = false;
   unsigned int th;
+  bool flat = maybe_flat_loop_profile (loop);
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && profile_status_for_fn (cfun) != PROFILE_READ)
+    flat = true;
 
   DUMP_VECT_SCOPE ("vec_transform_loop");
 
@@ -11087,7 +11091,7 @@ vect_transform_loop (loop_vec_info loop_vinfo, gimple *loop_vectorized_call)
 
   unsigned int assumed_vf = vect_vf_for_cost (loop_vinfo);
   scale_profile_for_vect_loop (loop, LOOP_VINFO_IV_EXIT (loop_vinfo),
-			       assumed_vf, false);
+			       assumed_vf, flat);
 
   /* True if the final iteration might not handle a full vector's
      worth of scalar iterations.  */
