@@ -4551,6 +4551,58 @@ rebuild_frequencies (void)
   timevar_pop (TV_REBUILD_FREQUENCIES);
 }
 
+namespace {
+
+const pass_data pass_data_rebuild_frequencies =
+{
+  GIMPLE_PASS, /* type */
+  "rebuild_frequencies", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  TV_REBUILD_FREQUENCIES, /* tv_id */
+  PROP_cfg, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
+};
+
+class pass_rebuild_frequencies : public gimple_opt_pass
+{
+public:
+  pass_rebuild_frequencies (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_rebuild_frequencies, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () final override
+  {
+    return new pass_rebuild_frequencies (m_ctxt);
+  }
+  void set_pass_param (unsigned int n, bool param) final override
+    {
+      gcc_assert (n == 0);
+      early_p = param;
+    }
+
+  unsigned int execute (function *) final override
+  {
+    rebuild_frequencies ();
+    return 0;
+  }
+
+private:
+  bool early_p;
+
+}; // class pass_rebuild_frequencies
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_rebuild_frequencies (gcc::context *ctxt)
+{
+  return new pass_rebuild_frequencies (ctxt);
+}
+
 /* Perform a dry run of the branch prediction pass and report comparsion of
    the predicted and real profile into the dump file.  */
 

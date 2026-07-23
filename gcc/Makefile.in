@@ -1504,6 +1504,7 @@ OBJS = \
         ipa-localize-array.o \
         ipa-array-dse.o \
 	internal-fn.o \
+	ipa-locality-cloning.o \
 	ipa-struct-reorg/ipa-struct-reorg.o \
 	ipa-class-reorg.o \
 	ipa-cp.o \
@@ -2761,6 +2762,7 @@ GTFILES = $(CPPLIB_H) $(srcdir)/input.h $(srcdir)/coretypes.h \
   $(srcdir)/ipa-param-manipulation.h $(srcdir)/ipa-sra.cc \
   $(srcdir)/ipa-modref.h $(srcdir)/ipa-modref.cc \
   $(srcdir)/ipa-modref-tree.h \
+  $(srcdir)/ipa-locality-cloning.cc \
   $(srcdir)/signop.h $(srcdir)/ipa-arrayremapping.cc \
   $(srcdir)/diagnostic-spec.h $(srcdir)/diagnostic-spec.cc \
   $(srcdir)/dwarf2out.h \

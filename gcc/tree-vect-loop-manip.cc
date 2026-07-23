@@ -1,5 +1,5 @@
 /* Vectorizer Specific Loop Manipulations
-   Copyright (C) 2003-2023 Free Software Foundation, Inc.
+   Copyright (C) 2003-2025 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
    and Ira Rosen <irar@il.ibm.com>
 
@@ -1149,10 +1149,14 @@ vect_set_loop_condition_partial_vectors_avx512 (class loop *loop,
 	      /* ???  But when the shift amount isn't constant this requires
 		 a round-trip to GRPs.  We could apply the bias to either
 		 side of the compare instead.  */
-	      tree shift = gimple_build (&preheader_seq, MULT_EXPR,
+	      tree shift = gimple_build (&preheader_seq, MINUS_EXPR,
 					 TREE_TYPE (niters_skip), niters_skip,
 					 build_int_cst (TREE_TYPE (niters_skip),
-							rgc.max_nscalars_per_iter));
+							bias));
+	      shift = gimple_build (&preheader_seq, MULT_EXPR,
+				    TREE_TYPE (niters_skip), shift,
+				    build_int_cst (TREE_TYPE (niters_skip),
+						   rgc.max_nscalars_per_iter));
 	      init_ctrl = gimple_build (&preheader_seq, LSHIFT_EXPR,
 					TREE_TYPE (init_ctrl),
 					init_ctrl, shift);
@@ -1427,6 +1431,32 @@ vect_set_loop_condition (class loop *loop, edge loop_e, loop_vec_info loop_vinfo
   if (dump_enabled_p ())
     dump_printf_loc (MSG_NOTE, vect_location, "New loop exit condition: %G",
 		     (gimple *) cond_stmt);
+}
+
+/* Get the virtual operand live on E.  The precondition on this is valid
+   immediate dominators and an actual virtual definition dominating E.  */
+/* ???  Costly band-aid.  For the use in question we can populate a
+   live-on-exit/end-of-BB virtual operand when copying stmts.  */
+
+static tree
+get_live_virtual_operand_on_edge (edge e)
+{
+  basic_block bb = e->src;
+  do
+    {
+      for (auto gsi = gsi_last_bb (bb); !gsi_end_p (gsi); gsi_prev (&gsi))
+	{
+	  gimple *stmt = gsi_stmt (gsi);
+	  if (gimple_vdef (stmt))
+	    return gimple_vdef (stmt);
+	  if (gimple_vuse (stmt))
+	    return gimple_vuse (stmt);
+	}
+      if (gphi *vphi = get_virtual_phi (bb))
+	return gimple_phi_result (vphi);
+      bb = get_immediate_dominator (CDI_DOMINATORS, bb);
+    }
+  while (1);
 }
 
 /* Given LOOP this function generates a new copy of it and puts it
@@ -2112,17 +2142,20 @@ vect_can_peel_nonlinear_iv_p (loop_vec_info loop_vinfo,
      For shift, when shift mount >= precision, there would be UD.
      For mult, don't known how to generate
      init_expr * pow (step, niters) for variable niters.
-     For neg, it should be ok, since niters of vectorized main loop
-     will always be multiple of 2.  */
-  if ((!LOOP_VINFO_NITERS_KNOWN_P (loop_vinfo)
-       || !LOOP_VINFO_VECT_FACTOR (loop_vinfo).is_constant ())
-      && induction_type != vect_step_op_neg)
+     For neg unknown niters are ok, since niters of vectorized main loop
+     will always be multiple of 2.
+     See also PR113163,  PR114196 and PR114485.  */
+  if (!LOOP_VINFO_VECT_FACTOR (loop_vinfo).is_constant ()
+      || LOOP_VINFO_USING_PARTIAL_VECTORS_P (loop_vinfo)
+      || (!LOOP_VINFO_NITERS_KNOWN_P (loop_vinfo)
+	  && induction_type != vect_step_op_neg))
     {
       if (dump_enabled_p ())
 	dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
 			 "Peeling for epilogue is not supported"
-			 " for nonlinear induction except neg"
-			 " when iteration count is unknown.\n");
+			 " for this nonlinear induction"
+			 " when iteration count is unknown or"
+			 " when using partial vectorization.\n");
       return false;
     }
 
@@ -2826,25 +2859,25 @@ vect_gen_vector_loop_niters (loop_vec_info loop_vinfo, tree niters,
 	{
 	  if (niters_no_overflow)
 	    {
-	      value_range vr (type,
-			      wi::one (TYPE_PRECISION (type)),
-			      wi::rshift (wi::max_value (TYPE_PRECISION (type),
-							 TYPE_SIGN (type)),
-					  exact_log2 (const_vf),
-					  TYPE_SIGN (type)));
+	      int_range<1> vr (type,
+			       wi::one (TYPE_PRECISION (type)),
+			       wi::rshift (wi::max_value (TYPE_PRECISION (type),
+							  TYPE_SIGN (type)),
+					   exact_log2 (const_vf),
+					   TYPE_SIGN (type)));
 	      set_range_info (niters_vector, vr);
 	    }
 	  /* For VF == 1 the vector IV might also overflow so we cannot
 	     assert a minimum value of 1.  */
 	  else if (const_vf > 1)
 	    {
-	      value_range vr (type,
-			      wi::one (TYPE_PRECISION (type)),
-			      wi::rshift (wi::max_value (TYPE_PRECISION (type),
-							 TYPE_SIGN (type))
-					  - (const_vf - 1),
-					  exact_log2 (const_vf), TYPE_SIGN (type))
-			      + 1);
+	      int_range<1> vr (type,
+			       wi::one (TYPE_PRECISION (type)),
+			       wi::rshift (wi::max_value (TYPE_PRECISION (type),
+							  TYPE_SIGN (type))
+					   - (const_vf - 1),
+					   exact_log2 (const_vf), TYPE_SIGN (type))
+			       + 1);
 	      set_range_info (niters_vector, vr);
 	    }
 	}
@@ -3076,12 +3109,12 @@ vect_get_main_loop_result (loop_vec_info loop_vinfo, tree main_loop_value,
    The analysis resulting in this epilogue loop's loop_vec_info was performed
    in the same vect_analyze_loop call as the main loop's.  At that time
    vect_analyze_loop constructs a list of accepted loop_vec_info's for lower
-   vectorization factors than the main loop.  This list is stored in the main
-   loop's loop_vec_info in the 'epilogue_vinfos' member.  Everytime we decide to
-   vectorize the epilogue loop for a lower vectorization factor,  the
-   loop_vec_info sitting at the top of the epilogue_vinfos list is removed,
-   updated and linked to the epilogue loop.  This is later used to vectorize
-   the epilogue.  The reason the loop_vec_info needs updating is that it was
+   vectorization factors than the main loop.  This list is chained in the
+   loop's loop_vec_info in the 'epilogue_vinfo' member.  When we decide to
+   vectorize the epilogue loop for a lower vectorization factor, the
+   loop_vec_info in epilogue_vinfo is updated and linked to the epilogue loop.
+   This is later used to vectorize the epilogue.
+   The reason the loop_vec_info needs updating is that it was
    constructed based on the original main loop, and the epilogue loop is a
    copy of this loop, so all links pointing to statements in the original loop
    need updating.  Furthermore, these loop_vec_infos share the
@@ -3104,13 +3137,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   profile_probability prob_prolog, prob_vector, prob_epilog;
   int estimated_vf;
   int prolog_peeling = 0;
-  bool vect_epilogues = loop_vinfo->epilogue_vinfos.length () > 0;
-  /* We currently do not support prolog peeling if the target alignment is not
-     known at compile time.  'vect_gen_prolog_loop_niters' depends on the
-     target alignment being constant.  */
-  dr_vec_info *dr_info = LOOP_VINFO_UNALIGNED_DR (loop_vinfo);
-  if (dr_info && !DR_TARGET_ALIGNMENT (dr_info).is_constant ())
-    return NULL;
+  bool vect_epilogues = loop_vinfo->epilogue_vinfo != NULL;
 
   if (!vect_use_loop_mask_for_alignment_p (loop_vinfo))
     prolog_peeling = LOOP_VINFO_PEELING_FOR_ALIGNMENT (loop_vinfo);
@@ -3180,7 +3207,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   prob_prolog = prob_epilog = profile_probability::guessed_always ()
 			.apply_scale (estimated_vf - 1, estimated_vf);
 
-  class loop *prolog, *epilog = NULL;
+  class loop *prolog = NULL, *epilog = NULL;
   class loop *first_loop = loop;
   bool irred_flag = loop_preheader_edge (loop)->flags & EDGE_IRREDUCIBLE_LOOP;
 
@@ -3231,13 +3258,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   else
     niters_prolog = build_int_cst (type, 0);
 
-  loop_vec_info epilogue_vinfo = NULL;
-  if (vect_epilogues)
-    {
-      epilogue_vinfo = loop_vinfo->epilogue_vinfos[0];
-      loop_vinfo->epilogue_vinfos.ordered_remove (0);
-    }
-
+  loop_vec_info epilogue_vinfo = loop_vinfo->epilogue_vinfo;
   tree niters_vector_mult_vf = NULL_TREE;
   /* Saving NITERs before the loop, as this may be changed by prologue.  */
   tree before_loop_niters = LOOP_VINFO_NITERS (loop_vinfo);
@@ -3260,7 +3281,7 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
   bool skip_vector = (LOOP_VINFO_NITERS_KNOWN_P (loop_vinfo)
 		      ? maybe_lt (LOOP_VINFO_INT_NITERS (loop_vinfo),
 				  bound_prolog + bound_epilog)
-		      : (!LOOP_REQUIRES_VERSIONING (loop_vinfo)
+		      : (!LOOP_REQUIRES_VERSIONING_FOR_ALIGNMENT (loop_vinfo)
 			 || vect_epilogues));
 
   /* Epilog loop must be executed if the number of iterations for epilog
@@ -3317,7 +3338,8 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
     {
       e = loop_preheader_edge (loop);
       edge exit_e = LOOP_VINFO_IV_EXIT (loop_vinfo);
-      gcc_checking_assert (slpeel_can_duplicate_loop_p (loop, exit_e, e));
+      gcc_checking_assert (slpeel_can_duplicate_loop_p (loop, exit_e, e)
+			   && !LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo));
 
       /* Peel prolog and put it on preheader edge of loop.  */
       edge scalar_e = LOOP_VINFO_SCALAR_IV_EXIT (loop_vinfo);
@@ -3348,6 +3370,24 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 					   guard_to, guard_bb,
 					   prob_prolog.invert (),
 					   irred_flag);
+	  for (edge alt_e : get_loop_exit_edges (prolog))
+	    {
+	      if (alt_e == prolog_e)
+		continue;
+	      basic_block old_dom
+		= get_immediate_dominator (CDI_DOMINATORS, alt_e->dest);
+	      if (flow_bb_inside_loop_p (prolog, old_dom))
+		{
+		  auto_vec<basic_block, 8> queue;
+		  for (auto son = first_dom_son (CDI_DOMINATORS, old_dom);
+		       son; son = next_dom_son (CDI_DOMINATORS, son))
+		    if (!flow_bb_inside_loop_p (prolog, son))
+		      queue.safe_push (son);
+		  for (auto son : queue)
+		    set_immediate_dominator (CDI_DOMINATORS, son, guard_bb);
+		}
+	    }
+
 	  e = EDGE_PRED (guard_to, 0);
 	  e = (e != guard_e ? e : EDGE_PRED (guard_to, 1));
 	  slpeel_update_phi_nodes_for_guard1 (prolog, loop, guard_e, e);
@@ -3370,9 +3410,9 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 	 least VF, so set range information for newly generated var.  */
       if (new_var_p)
 	{
-	  value_range vr (type,
-			  wi::to_wide (build_int_cst (type, lowest_vf)),
-			  wi::to_wide (TYPE_MAX_VALUE (type)));
+	  int_range<1> vr (type,
+			   wi::to_wide (build_int_cst (type, lowest_vf)),
+			   wi::to_wide (TYPE_MAX_VALUE (type)));
 	  set_range_info (niters, vr);
 	}
 
@@ -3434,6 +3474,30 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 	  skip_e = guard_e;
 	  e = EDGE_PRED (guard_to, 0);
 	  e = (e != guard_e ? e : EDGE_PRED (guard_to, 1));
+
+	  /* Handle any remaining dominator updates needed after
+	     inserting the loop skip edge above.  */
+	  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+	      && prolog_peeling)
+	    {
+	      /* Adding a skip edge to skip a loop with multiple exits
+		 means the dominator of the join blocks for all exits shifts
+		 from the prolog skip guard to the loop skip guard.  */
+	      auto prolog_skip_bb
+		= single_pred (loop_preheader_edge (prolog)->src);
+	      auto needs_update
+		= get_dominated_by (CDI_DOMINATORS, prolog_skip_bb);
+
+	      /* Update everything except for the immediate children of
+		 the prolog skip block (the prolog and vector preheaders).
+		 Those should remain dominated by the prolog skip block itself,
+		 since the loop guard edge goes to the epilogue.  */
+	      for (auto bb : needs_update)
+		if (bb != EDGE_SUCC (prolog_skip_bb, 0)->dest
+		    && bb != EDGE_SUCC (prolog_skip_bb, 1)->dest)
+		  set_immediate_dominator (CDI_DOMINATORS, bb, guard_bb);
+	    }
+
 	  slpeel_update_phi_nodes_for_guard1 (first_loop, epilog, guard_e, e);
 
 	  /* Simply propagate profile info from guard_bb to guard_to which is
@@ -3498,7 +3562,11 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
 	vect_update_ivs_after_vectorizer (loop_vinfo, niters_vector_mult_vf,
 					  update_e);
 
-      if (skip_epilog || LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+      /* If we have a peeled vector iteration we will never skip the epilog loop
+	 and we can simplify the cfg a lot by not doing the edge split.  */
+      if (skip_epilog
+	  || (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+	      && !LOOP_VINFO_EARLY_BREAKS_VECT_PEELED (loop_vinfo)))
 	{
 	  guard_cond = fold_build2 (EQ_EXPR, boolean_type_node,
 				    niters, niters_vector_mult_vf);
@@ -3552,6 +3620,21 @@ vect_do_peeling (loop_vec_info loop_vinfo, tree niters, tree nitersm1,
       /* Recalculate the dominators after adding the guard edge.  */
       if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
 	iterate_fix_dominators (CDI_DOMINATORS, doms, false);
+
+      /* When we do not have a loop-around edge to the epilog we know
+	 the vector loop covered at least VF scalar iterations unless
+	 we have early breaks.
+	 Update any known upper bound with this knowledge.  */
+      if (! skip_vector
+	  && ! LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+	{
+	  if (epilog->any_upper_bound)
+	    epilog->nb_iterations_upper_bound -= lowest_vf;
+	  if (epilog->any_likely_upper_bound)
+	    epilog->nb_iterations_likely_upper_bound -= lowest_vf;
+	  if (epilog->any_estimate)
+	    epilog->nb_iterations_estimate -= lowest_vf;
+	}
 
       unsigned HOST_WIDE_INT bound;
       if (bound_scalar.is_constant (&bound))
@@ -4267,6 +4350,8 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
 	  adj.safe_push (son);
       for (auto son : adj)
 	set_immediate_dominator (CDI_DOMINATORS, son, e->src);
+      //debug_bb (condition_bb);
+      //debug_bb (e->src);
     }
 
   if (version_niter)

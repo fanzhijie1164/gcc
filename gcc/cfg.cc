@@ -901,6 +901,67 @@ brief_dump_cfg (FILE *file, dump_flags_t flags)
     }
 }
 
+/* Set probability of E to NEW_PROB and rescale other edges
+   from E->src so their sum remains the same.  */
+
+void
+set_edge_probability_and_rescale_others (edge e, profile_probability new_prob)
+{
+  edge e2;
+  edge_iterator ei;
+  if (e->probability == new_prob)
+    return;
+  /* If we made E unconditional, drop other frequencies to 0.  */
+  if (new_prob == profile_probability::always ())
+    {
+      FOR_EACH_EDGE (e2, ei, e->src->succs)
+	if (e2 != e)
+	  e2->probability = profile_probability::never ();
+    }
+  else
+    {
+      int n = 0;
+      edge other_e = NULL;
+
+      /* See how many other edges are leaving exit_edge->src.  */
+      FOR_EACH_EDGE (e2, ei, e->src->succs)
+	if (e2 != e && !(e2->flags & EDGE_FAKE))
+	  {
+	    other_e = e2;
+	    n++;
+	  }
+      /* If there is only one other edge with non-zero probability we do not
+	 need to scale which drops quality of profile from precise
+	 to adjusted.  */
+      if (n == 1)
+	other_e->probability = new_prob.invert ();
+      /* Nothing to do if there are no other edges.  */
+      else if (!n)
+	;
+      /* Do scaling if possible.  */
+      else if (e->probability.invert ().nonzero_p ())
+	{
+	  profile_probability num = new_prob.invert (),
+			      den = e->probability.invert ();
+	  FOR_EACH_EDGE (e2, ei, e->src->succs)
+	    if (e2 != e && !(e2->flags & EDGE_FAKE))
+	      e2->probability = e2->probability.apply_scale (num, den);
+	}
+      else
+	{
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file,
+		     ";; probability of edge %i->%i set reduced from 1."
+		     " The remaining edges are left inconsistent.\n",
+		     e->src->index, e->dest->index);
+	  FOR_EACH_EDGE (e2, ei, e->src->succs)
+	    if (e2 != e && !(e2->flags & EDGE_FAKE))
+	      e2->probability = new_prob.invert ().guessed () / n;
+	}
+    }
+  e->probability = new_prob;
+}
+
 /* An edge originally destinating BB of COUNT has been proved to
    leave the block by TAKEN_EDGE.  Update profile of BB such that edge E can be
    redirected to destination of TAKEN_EDGE.

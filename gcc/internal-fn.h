@@ -219,26 +219,44 @@ extern bool commutative_ternary_fn_p (internal_fn);
 extern int first_commutative_argument (internal_fn);
 extern bool associative_binary_fn_p (internal_fn);
 extern bool widening_fn_p (code_helper);
+extern bool widening_evenodd_fn_p (code_helper);
 
 extern bool set_edom_supported_p (void);
 
 extern internal_fn get_conditional_internal_fn (tree_code);
 extern internal_fn get_conditional_internal_fn (internal_fn);
+extern internal_fn get_len_internal_fn (internal_fn);
+extern internal_fn get_conditional_len_internal_fn (tree_code);
 extern tree_code conditional_internal_fn_code (internal_fn);
 extern internal_fn get_unconditional_internal_fn (internal_fn);
 extern bool can_interpret_as_conditional_op_p (gimple *, tree *,
 					       tree_code *, tree (&)[3],
 					       tree *);
+extern bool can_interpret_as_conditional_op_p (gimple *, tree *,
+					       tree_code *, tree (&)[3],
+					       tree *, tree *, tree *);
 
 extern bool internal_load_fn_p (internal_fn);
 extern bool internal_store_fn_p (internal_fn);
 extern bool internal_gather_scatter_fn_p (internal_fn);
 extern int internal_fn_mask_index (internal_fn);
+extern int internal_fn_len_index (internal_fn);
+extern int internal_fn_else_index (internal_fn);
 extern int internal_fn_stored_value_index (internal_fn);
 extern bool internal_gather_scatter_fn_supported_p (internal_fn, tree,
-						    tree, tree, int);
+						    tree, tree, int,
+						    vec<int> * = nullptr);
 extern bool internal_check_ptrs_fn_supported_p (internal_fn, tree,
 						poly_uint64, unsigned int);
+
+/* Integer constants representing which else value is supported for masked load
+   functions.  */
+#define MASK_LOAD_ELSE_ZERO -1
+#define MASK_LOAD_ELSE_M1 -2
+#define MASK_LOAD_ELSE_UNDEFINED -3
+
+extern void get_supported_else_vals (enum insn_code, unsigned, vec<int> &);
+extern bool supported_else_val_p (enum insn_code, unsigned, int);
 #define VECT_PARTIAL_BIAS_UNSUPPORTED 127
 
 extern signed char internal_len_load_store_bias (internal_fn ifn,

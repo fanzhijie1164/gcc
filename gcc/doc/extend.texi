@@ -5943,14 +5943,12 @@ the custom instruction @var{insn}.
 These target attributes correspond to the
 @option{-mcustom-@var{insn}=@var{N}} and @option{-mno-custom-@var{insn}}
 command-line options, and support the same set of @var{insn} keywords.
-@xref{Nios II Options}, for more information.
 
 @cindex @code{target("custom-fpu-cfg=@var{name}")} function attribute, Nios II
 @item custom-fpu-cfg=@var{name}
 This attribute corresponds to the @option{-mcustom-fpu-cfg=@var{name}}
 command-line option, to select a predefined set of custom instructions
 named @var{name}.
-@xref{Nios II Options}, for more information.
 @end table
 @end table
 
@@ -24415,6 +24413,25 @@ void ignore_vec_dep (int *a, int k, int c, int m)
 #pragma GCC ivdep
   for (int i = 0; i < m; i++)
     a[i] = a[i + k] * c;
+@}
+@end smallexample
+
+@cindex pragma GCC novector
+@item #pragma GCC novector
+
+With this pragma, the programmer asserts that the following loop should be
+prevented from executing concurrently with SIMD (single instruction multiple
+data) instructions.
+
+For example, the compiler cannot vectorize the following loop with the pragma:
+
+@smallexample
+void foo (int n, int *a, int *b, int *c)
+@{
+  int i, j;
+#pragma GCC novector
+  for (i = 0; i < n; ++i)
+    a[i] = b[i] + c[i];
 @}
 @end smallexample
 
