@@ -1,5 +1,5 @@
 /* Command line option handling.
-   Copyright (C) 2002-2023 Free Software Foundation, Inc.
+   Copyright (C) 2002-2025 Free Software Foundation, Inc.
    Contributed by Neil Booth.
 
 This file is part of GCC.
@@ -43,6 +43,10 @@ along with GCC; see the file COPYING3.  If not see
 /* Set by -fcanon-prefix-map.  */
 bool flag_canon_prefix_map;
 
+/* Set by finish_options when flag_stack_protector was set only because of
+   -fhardened.  Yuck.  */
+bool flag_stack_protector_set_by_fhardened_p;
+
 static void set_Wstrict_aliasing (struct gcc_options *opts, int onoff);
 
 /* Names of fundamental debug info formats indexed by enum
@@ -50,7 +54,7 @@ static void set_Wstrict_aliasing (struct gcc_options *opts, int onoff);
 
 const char *const debug_type_names[] =
 {
-  "none", "stabs", "dwarf-2", "xcoff", "vms", "ctf", "btf"
+  "none", "dwarf-2", "vms", "ctf", "btf", "codeview"
 };
 
 /* Bitmasks of fundamental debug info formats indexed by enum
@@ -59,13 +63,13 @@ const char *const debug_type_names[] =
 static uint32_t debug_type_masks[] =
 {
   NO_DEBUG, DWARF2_DEBUG, VMS_DEBUG,
-  CTF_DEBUG, BTF_DEBUG
+  CTF_DEBUG, BTF_DEBUG, CODEVIEW_DEBUG
 };
 
 /* Names of the set of debug formats requested by user.  Updated and accessed
    via debug_set_names.  */
 
-static char df_set_names[sizeof "none stabs dwarf-2 xcoff vms ctf btf"];
+static char df_set_names[sizeof "none dwarf-2 vms ctf btf codeview"];
 
 /* Get enum debug_info_type of the specified debug format, for error messages.
    Can be used only for individual debug format types.  */
@@ -159,6 +163,14 @@ ctf_debuginfo_p ()
   return (write_symbols & CTF_DEBUG);
 }
 
+/* Return TRUE iff CodeView debug info is enabled.  */
+
+bool
+codeview_debuginfo_p ()
+{
+  return (write_symbols & CODEVIEW_DEBUG);
+}
+
 /* Return TRUE iff dwarf2 debug info is enabled.  */
 
 bool
@@ -173,7 +185,8 @@ dwarf_debuginfo_p (struct gcc_options *opts)
 bool dwarf_based_debuginfo_p ()
 {
   return ((write_symbols & CTF_DEBUG)
-	  || (write_symbols & BTF_DEBUG));
+	  || (write_symbols & BTF_DEBUG)
+	  || (write_symbols & CODEVIEW_DEBUG));
 }
 
 /* All flag uses below need to explicitely reference the option sets
@@ -327,7 +340,6 @@ static const char undocumented_msg[] = N_("This option lacks documentation.");
 static const char use_diagnosed_msg[] = N_("Uses of this option are diagnosed.");
 
 typedef char *char_p; /* For DEF_VEC_P.  */
-static void set_simdmath_flags (struct gcc_options *opts, int set);
 
 static void set_debug_level (uint32_t dinfo, int extended,
 			     const char *arg, struct gcc_options *opts,
@@ -373,7 +385,7 @@ add_comma_separated_to_vector (void **pvec, const char *arg)
   char *w;
   char *token_start;
   vec<char_p> *v = (vec<char_p> *) *pvec;
-  
+
   vec_check_alloc (v, 1);
 
   /* We never free this string.  */
@@ -432,9 +444,6 @@ init_options_struct (struct gcc_options *opts, struct gcc_options *opts_set)
 
   /* Initialize whether `char' is signed.  */
   opts->x_flag_signed_char = DEFAULT_SIGNED_CHAR;
-  /* Set this to a special "uninitialized" value.  The actual default
-     is set after target options have been processed.  */
-  opts->x_flag_short_enums = 2;
 
   /* Initialize target_flags before default_options_optimization
      so the latter can modify it.  */
@@ -598,6 +607,7 @@ static const struct default_options default_options_table[] =
     { OPT_LEVELS_1_PLUS, OPT_fvar_tracking, NULL, 1 },
 
     /* -O1 (and not -Og) optimizations.  */
+    { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fbit_tests, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fbranch_count_reg, NULL, 1 },
 #if DELAY_SLOTS
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fdelayed_branch, NULL, 1 },
@@ -606,6 +616,7 @@ static const struct default_options default_options_table[] =
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fif_conversion, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fif_conversion2, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_finline_functions_called_once, NULL, 1 },
+    { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fjump_tables, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fmove_loop_invariants, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fmove_loop_stores, NULL, 1 },
     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fssa_phiopt, NULL, 1 },
@@ -623,6 +634,7 @@ static const struct default_options default_options_table[] =
     { OPT_LEVELS_2_PLUS, OPT_fdevirtualize, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_fdevirtualize_speculatively, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_fexpensive_optimizations, NULL, 1 },
+    { OPT_LEVELS_2_PLUS, OPT_fext_dce, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_fgcse, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_fhoist_adjacent_loads, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_findirect_inlining, NULL, 1 },
@@ -653,6 +665,8 @@ static const struct default_options default_options_table[] =
       VECT_COST_MODEL_VERY_CHEAP },
     { OPT_LEVELS_2_PLUS, OPT_finline_functions, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_ftree_loop_distribute_patterns, NULL, 1 },
+    { OPT_LEVELS_2_PLUS, OPT_foptimize_crc, NULL, 1 },
+    { OPT_LEVELS_2_PLUS, OPT_flate_combine_instructions, NULL, 1 },
 
     /* -O2 and above optimizations, but not -Os or -Og.  */
     { OPT_LEVELS_2_PLUS_SPEED_ONLY, OPT_falign_functions, NULL, 1 },
@@ -1094,6 +1108,17 @@ finish_options (struct gcc_options *opts, struct gcc_options *opts_set,
       opts->x_flag_section_anchors = 0;
     }
 
+  if (opts->x_flag_hardened)
+    {
+      if (!opts_set->x_flag_auto_var_init)
+	opts->x_flag_auto_var_init = AUTO_INIT_ZERO;
+      else if (opts->x_flag_auto_var_init != AUTO_INIT_ZERO)
+	warning_at (loc, OPT_Whardened,
+		    "%<-ftrivial-auto-var-init=zero%> is not enabled by "
+		    "%<-fhardened%> because it was specified on the command "
+		    "line");
+    }
+
   if (!opts->x_flag_opts_finished)
     {
       /* We initialize opts->x_flag_pie to -1 so that targets can set a
@@ -1103,7 +1128,8 @@ finish_options (struct gcc_options *opts, struct gcc_options *opts_set,
 	  /* We initialize opts->x_flag_pic to -1 so that we can tell if
 	     -fpic, -fPIC, -fno-pic or -fno-PIC is used.  */
 	  if (opts->x_flag_pic == -1)
-	    opts->x_flag_pie = DEFAULT_FLAG_PIE;
+	    opts->x_flag_pie = (opts->x_flag_hardened
+				? /*-fPIE*/ 2 : DEFAULT_FLAG_PIE);
 	  else
 	    opts->x_flag_pie = 0;
 	}
@@ -1118,9 +1144,29 @@ finish_options (struct gcc_options *opts, struct gcc_options *opts_set,
     }
 
   /* We initialize opts->x_flag_stack_protect to -1 so that targets
-     can set a default value.  */
+     can set a default value.  With --enable-default-ssp or -fhardened
+     the default is -fstack-protector-strong.  */
   if (opts->x_flag_stack_protect == -1)
-    opts->x_flag_stack_protect = DEFAULT_FLAG_SSP;
+    {
+      /* This should check FRAME_GROWS_DOWNWARD, but on some targets it's
+	 defined in such a way that it uses flag_stack_protect which can't
+	 be used here.  Moreover, some targets like BPF don't support
+	 -fstack-protector at all but we don't know that here.  So remember
+	 that flag_stack_protect was set at the behest of -fhardened.  */
+      if (opts->x_flag_hardened)
+	{
+	  opts->x_flag_stack_protect = SPCT_FLAG_STRONG;
+	  flag_stack_protector_set_by_fhardened_p = true;
+	}
+      else
+	opts->x_flag_stack_protect = DEFAULT_FLAG_SSP;
+    }
+  else if (opts->x_flag_hardened
+	   && opts->x_flag_stack_protect != SPCT_FLAG_STRONG)
+    warning_at (UNKNOWN_LOCATION, OPT_Whardened,
+		"%<-fstack-protector-strong%> is not enabled by "
+		"%<-fhardened%> because it was specified on the command "
+		"line");
 
   if (opts->x_optimize == 0)
     {
@@ -1356,14 +1402,14 @@ finish_options (struct gcc_options *opts, struct gcc_options *opts_set,
     opts->x_debug_nonbind_markers_p
       = (opts->x_optimize
 	 && opts->x_debug_info_level >= DINFO_LEVEL_NORMAL
-	 && dwarf_debuginfo_p (opts)
+	 && (dwarf_debuginfo_p (opts) || codeview_debuginfo_p ())
 	 && !(opts->x_flag_selective_scheduling
 	      || opts->x_flag_selective_scheduling2));
 
   /* We know which debug output will be used so we can set flag_var_tracking
      and flag_var_tracking_uninit if the user has not specified them.  */
   if (opts->x_debug_info_level < DINFO_LEVEL_NORMAL
-      || !dwarf_debuginfo_p (opts)
+      || (!dwarf_debuginfo_p (opts) && !codeview_debuginfo_p ())
       /* We have not yet initialized debug hooks so match that to check
 	 whether we're only doing DWARF2_LINENO_DEBUGGING_INFO.  */
 #ifndef DWARF2_DEBUGGING_INFO
@@ -2051,15 +2097,7 @@ enable_fdo_optimizations (struct gcc_options *opts,
   SET_OPTION_IF_UNSET (opts, opts_set, flag_loop_interchange, value);
   SET_OPTION_IF_UNSET (opts, opts_set, flag_unroll_jam, value);
   SET_OPTION_IF_UNSET (opts, opts_set, flag_tree_loop_distribution, value);
-}
-
-static void
-set_cache_misses_profile_params (struct gcc_options *opts,
-                                struct gcc_options *opts_set)
-{
-  SET_OPTION_IF_UNSET (opts, opts_set, flag_prefetch_loop_arrays, 1);
-  SET_OPTION_IF_UNSET (opts, opts_set, prefetch_level, 2);
-  SET_OPTION_IF_UNSET (opts, opts_set, param_simultaneous_prefetches, 100);
+  SET_OPTION_IF_UNSET (opts, opts_set, flag_optimize_crc, value);
 }
 
 /* -f{,no-}sanitize{,-recover}= suboptions.  */
@@ -2471,6 +2509,32 @@ parse_and_check_patch_area (const char *arg, bool report_error,
   free (patch_area_arg);
 }
 
+/* Print options enabled by -fhardened.  Keep this in sync with the manual!  */
+
+static void
+print_help_hardened ()
+{
+  printf ("%s\n", "The following options are enabled by -fhardened:");
+  /* Unfortunately, I can't seem to use targetm.fortify_source_default_level
+     here.  */
+  printf ("  %s\n", "-D_FORTIFY_SOURCE=3 (or =2 for glibc < 2.35)");
+  printf ("  %s\n", "-D_GLIBCXX_ASSERTIONS");
+  printf ("  %s\n", "-ftrivial-auto-var-init=zero");
+#ifdef HAVE_LD_PIE
+  printf ("  %s  %s\n", "-fPIE", "-pie");
+#endif
+#if HAVE_LD_NOW_SUPPORT
+  printf ("  %s\n", "-Wl,-z,now");
+#endif
+#if HAVE_LD_RELRO_SUPPORT
+  printf ("  %s\n", "-Wl,-z,relro");
+#endif
+  printf ("  %s\n", "-fstack-protector-strong");
+  printf ("  %s\n", "-fstack-clash-protection");
+  printf ("  %s\n", "-fcf-protection=full");
+  putchar ('\n');
+}
+
 /* Print help when OPT__help_ is set.  */
 
 void
@@ -2586,6 +2650,8 @@ print_help (struct gcc_options *opts, unsigned int lang_mask,
 	}
       else if (lang_flag != 0)
 	*pflags |= lang_flag;
+      else if (strncasecmp (a, "hardened", len) == 0)
+	print_help_hardened ();
       else
 	warning (0,
 		 "unrecognized argument to %<--help=%> option: %q.*s",
@@ -2872,7 +2938,7 @@ common_handle_option (struct gcc_options *opts,
     case OPT_fdiagnostics_show_location_:
       diagnostic_prefixing_rule (dc) = (diagnostic_prefixing_rule_t) value;
       break;
- 
+
     case OPT_fdiagnostics_show_caret:
       dc->show_caret = value;
       break;
@@ -2949,10 +3015,6 @@ common_handle_option (struct gcc_options *opts,
       dc->min_margin_width = value;
       break;
 
-    case OPT_fsimdmath:
-      set_simdmath_flags (opts, value);
-      break;
-
     case OPT_fdump_:
       /* Deferred.  */
       break;
@@ -3001,11 +3063,14 @@ common_handle_option (struct gcc_options *opts,
       break;
 
     case OPT_foffload_abi_:
+    case OPT_foffload_abi_host_opts_:
 #ifdef ACCEL_COMPILER
       /* Handled in the 'mkoffload's.  */
 #else
-      error_at (loc, "%<-foffload-abi%> option can be specified only for "
-		"offload compiler");
+      error_at (loc,
+		"%qs option can be specified only for offload compiler",
+		(code == OPT_foffload_abi_) ? "-foffload-abi"
+					    : "-foffload-abi-host-opts");
 #endif
       break;
 
@@ -3051,52 +3116,6 @@ common_handle_option (struct gcc_options *opts,
       SET_OPTION_IF_UNSET (opts, opts_set, flag_profile_correction, value);
       break;
 
-    case OPT_fadditional_profile_:
-      opts->x_additional_profile_file = xstrdup (arg);
-      opts->x_flag_additional_profile = true;
-      value = true;
-      /* No break here - do -fadditional-profile processing. */
-      /* FALLTHRU */
-    case OPT_fadditional_profile:
-      opts->x_flag_ipa_extend_auto_profile = value;
-      break;
-
-    case OPT_fipa_struct_reorg_:
-      /* No break here - do -fipa-struct-reorg processing.  */
-      /* FALLTHRU.  */
-    case OPT_fipa_struct_reorg:
-      opts->x_flag_ipa_struct_reorg = value;
-      if (value && !opts->x_struct_layout_optimize_level)
-	{
-	  /* Using the -fipa-struct-reorg option is equivalent to using
-	     -fipa-struct-reorg=1.  */
-	  opts->x_struct_layout_optimize_level = 1;
-	}
-      break;
-
-    case OPT_fipa_reorder_fields:
-      SET_OPTION_IF_UNSET (opts, opts_set, flag_ipa_struct_reorg, value);
-      break;
-
-    case OPT_fipa_extend_auto_profile:
-      opts->x_flag_ipa_extend_auto_profile = opts->x_flag_cache_misses_profile
-             ? true : value;
-      break;
-
-    case OPT_fcache_misses_profile_:
-      opts->x_cache_misses_profile_file = xstrdup (arg);
-      opts->x_flag_cache_misses_profile = true;
-      value = true;
-      /* No break here - do -fcache-misses-profile processing. */
-      /* FALLTHRU */
-    case OPT_fcache_misses_profile:
-      opts->x_flag_ipa_extend_auto_profile = value;
-      if (value)
-      {
-             set_cache_misses_profile_params (opts, opts_set);
-      }
-      break;
-
     case OPT_fprofile_generate_:
       opts->x_profile_data_prefix = xstrdup (arg);
       value = true;
@@ -3107,11 +3126,6 @@ common_handle_option (struct gcc_options *opts,
       SET_OPTION_IF_UNSET (opts, opts_set, flag_profile_values, value);
       SET_OPTION_IF_UNSET (opts, opts_set, flag_inline_functions, value);
       SET_OPTION_IF_UNSET (opts, opts_set, flag_ipa_bit_cp, value);
-      break;
-
-    case OPT_fprefetch_loop_arrays_:
-      opts->x_prefetch_level = value;
-      opts->x_flag_prefetch_loop_arrays = true;
       break;
 
     case OPT_fprofile_info_section:
@@ -3210,6 +3224,9 @@ common_handle_option (struct gcc_options *opts,
       break;
 
     case OPT_gcodeview:
+      set_debug_level (CODEVIEW_DEBUG, false, arg, opts, opts_set, loc);
+      if (opts->x_debug_info_level < DINFO_LEVEL_NORMAL)
+	opts->x_debug_info_level = DINFO_LEVEL_NORMAL;
       break;
 
     case OPT_gbtf:
@@ -3240,7 +3257,7 @@ common_handle_option (struct gcc_options *opts,
         }
       else
         value = opts->x_dwarf_version;
-      
+
       /* FALLTHRU */
     case OPT_gdwarf_:
       if (value < 2 || value > 5)
@@ -3372,18 +3389,6 @@ common_handle_option (struct gcc_options *opts,
   return true;
 }
 
-/* The following routines are used to set -fno-math-errno and -fopenmp-simd
-   to enable vector mathlib.  */
-static void
-set_simdmath_flags (struct gcc_options *opts, int set)
-{
-  if (set)
-    {
-      opts->x_flag_errno_math = 0;
-      opts->x_flag_openmp_simd = 1;
-    }
-}
-
 /* Used to set the level of strict aliasing warnings in OPTS,
    when no level is specified (i.e., when -Wstrict-aliasing, and not
    -Wstrict-aliasing=level was given).
@@ -3496,7 +3501,8 @@ set_debug_level (uint32_t dinfo, int extended, const char *arg,
 	    warning_at (loc, 0, "target system does not support debug output");
 	}
       else if ((opts->x_write_symbols & CTF_DEBUG)
-	       || (opts->x_write_symbols & BTF_DEBUG))
+	       || (opts->x_write_symbols & BTF_DEBUG)
+	       || (opts->x_write_symbols & CODEVIEW_DEBUG))
 	{
 	  opts->x_write_symbols |= DWARF2_DEBUG;
 	  opts_set->x_write_symbols |= DWARF2_DEBUG;
@@ -3695,7 +3701,8 @@ enable_warning_as_error (const char *arg, int value, unsigned int lang_mask,
 
 char *
 option_name (diagnostic_context *context, int option_index,
-	     diagnostic_t orig_diag_kind, diagnostic_t diag_kind)
+		  diagnostic_t orig_diag_kind,
+		  diagnostic_t diag_kind)
 {
   if (option_index)
     {
@@ -3760,14 +3767,7 @@ get_option_url (diagnostic_context *, int option_index)
 		      the Makefile (see --with-documentation-root-url), and
 		      should have a trailing slash.  */
 		   DOCUMENTATION_ROOT_URL,
-
-		   /* get_option_html_page will return something like
-		      "gcc/Warning-Options.html".  */
 		   get_option_html_page (option_index),
-
-		   /* Expect an anchor of the form "index-Wfoo" e.g.
-		      <a name="index-Wformat"></a>, and thus an id within
-		      the URL of "#index-Wformat".  */
 		   "#index", cl_options[option_index].opt_text,
 		   NULL);
   else
@@ -3798,9 +3798,7 @@ gen_command_line_string (cl_decoded_option *options,
       case OPT_v:
       case OPT_w:
       case OPT_L:
-      case OPT_D:
       case OPT_I:
-      case OPT_U:
       case OPT_SPECIAL_unknown:
       case OPT_SPECIAL_ignore:
       case OPT_SPECIAL_warn_removed:
@@ -3833,6 +3831,18 @@ gen_command_line_string (cl_decoded_option *options,
       case OPT_fchecking:
       case OPT_fchecking_:
 	/* Ignore these.  */
+	continue;
+      case OPT_D:
+      case OPT_U:
+	if (startswith (options[i].arg, "_FORTIFY_SOURCE")
+	    && (options[i].arg[sizeof ("_FORTIFY_SOURCE") - 1] == '\0'
+		|| (options[i].opt_index == OPT_D
+		    && options[i].arg[sizeof ("_FORTIFY_SOURCE") - 1] == '=')))
+	  {
+	    switches.safe_push (options[i].orig_option_with_args_text);
+	    len += strlen (options[i].orig_option_with_args_text) + 1;
+	  }
+	/* Otherwise ignore these. */
 	continue;
       case OPT_flto_:
 	{
@@ -3909,7 +3919,7 @@ test_get_option_html_page ()
 {
   ASSERT_STREQ (get_option_html_page (OPT_Wcpp), "gcc/Warning-Options.html");
   ASSERT_STREQ (get_option_html_page (OPT_Wanalyzer_double_free),
-	     "gcc/Static-Analyzer-Options.html");
+		"gcc/Static-Analyzer-Options.html");
 #ifdef CL_Fortran
   ASSERT_STREQ (get_option_html_page (OPT_Wline_truncation),
 		"gfortran/Error-and-Warning-Options.html");

@@ -233,6 +233,116 @@ average_num_loop_insns (const class loop *loop)
   return ret;
 }
 
+/* Compute how many times loop is entered.  */
+
+profile_count
+loop_count_in (const class loop *loop)
+{
+  /* Compute number of invocations of the loop.  */
+  profile_count count_in = profile_count::zero ();
+  edge e;
+  edge_iterator ei;
+  bool found_latch = false;
+
+  if (loops_state_satisfies_p (LOOPS_MAY_HAVE_MULTIPLE_LATCHES))
+    FOR_EACH_EDGE (e, ei, loop->header->preds)
+      if (!flow_bb_inside_loop_p (loop, e->src))
+	count_in += e->count ();
+      else
+	found_latch = true;
+  else
+    FOR_EACH_EDGE (e, ei, loop->header->preds)
+      if (e->src != loop->latch)
+	count_in += e->count ();
+      else
+	found_latch = true;
+  gcc_checking_assert (found_latch);
+  return count_in;
+}
+
+/* Return true if BB profile can be used to determine the expected number of
+   iterations (that is number of executions of latch edge(s) for each
+   entry of the loop.  If this is the case initialize RET with the number
+   of iterations.  */
+
+bool
+expected_loop_iterations_by_profile (const class loop *loop, sreal *ret,
+				     bool *reliable)
+{
+  profile_count header_count = loop->header->count;
+  if (reliable)
+    *reliable = false;
+
+  if (!header_count.initialized_p ()
+      || !header_count.nonzero_p ())
+    return false;
+
+  profile_count count_in = loop_count_in (loop);
+
+  bool known;
+  /* Number of iterations is number of executions of latch edge.  */
+  *ret = (header_count - count_in).to_sreal_scale (count_in, &known);
+  if (!known)
+    return false;
+  if (reliable)
+    {
+      if (header_count < count_in && header_count.differs_from_p (count_in))
+	{
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file, "Inconsistent bb profile of loop %i\n",
+		     loop->num);
+	  *reliable = false;
+	}
+      else
+	*reliable = count_in.reliable_p () && header_count.reliable_p ();
+    }
+  return true;
+}
+
+/* Return true if loop CFG profile may be unrealistically flat.  */
+
+bool
+maybe_flat_loop_profile (const class loop *loop)
+{
+  bool reliable;
+  sreal ret;
+
+  if (!expected_loop_iterations_by_profile (loop, &ret, &reliable))
+    return true;
+
+  if (reliable)
+    {
+      int64_t intret = ret.to_nearest_int ();
+      if (loop->any_estimate
+	  && (wi::ltu_p (intret * 2, loop->nb_iterations_estimate)
+	      || wi::gtu_p (intret, loop->nb_iterations_estimate * 2)))
+	{
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file,
+		    "Loop %i has inconsistent iterations estimates: "
+		    "reliable CFG based iteration estimate is %f "
+		    "while nb_iterations_estimate is %i\n",
+		    loop->num,
+		    ret.to_double (),
+		    (int)loop->nb_iterations_estimate.to_shwi ());
+	  return true;
+	}
+      return false;
+    }
+
+  int64_t intret = (ret * sreal (9, -3)).to_nearest_int ();
+  if (loop->any_upper_bound
+      && wi::geu_p (intret, loop->nb_iterations_upper_bound))
+    return false;
+  if (loop->any_likely_upper_bound
+      && wi::geu_p (intret, loop->nb_iterations_likely_upper_bound))
+    return false;
+  if (loop->any_estimate
+      && wi::geu_p (intret, loop->nb_iterations_estimate))
+    return false;
+  return true;
+}
+
 /* Returns expected number of iterations of LOOP, according to
    measured or guessed profile.
 

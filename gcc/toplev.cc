@@ -74,6 +74,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "ipa-reference.h"
 #include "symbol-summary.h"
 #include "tree-vrp.h"
+#include "sreal.h"
+#include "ipa-cp.h"
 #include "ipa-prop.h"
 #include "gcse.h"
 #include "omp-offload.h"
@@ -1688,9 +1690,6 @@ process_options (bool no_backend)
   if (flag_checking >= 2)
     hash_table_sanitize_eq_limit
       = param_hash_table_verification_limit;
-
-  if (flag_large_source_files)
-    line_table->default_range_bits = 0;
 
   diagnose_options (&global_options, &global_options_set, UNKNOWN_LOCATION);
 

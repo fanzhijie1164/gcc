@@ -1,5 +1,5 @@
 /* Top-level LTO routines.
-   Copyright (C) 2009-2023 Free Software Foundation, Inc.
+   Copyright (C) 2009-2025 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -38,6 +38,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "stor-layout.h"
 #include "symbol-summary.h"
 #include "tree-vrp.h"
+#include "sreal.h"
+#include "ipa-cp.h"
 #include "ipa-prop.h"
 #include "debug.h"
 #include "lto.h"
@@ -60,8 +62,10 @@ along with GCC; see the file COPYING3.  If not see
 /* Number of parallel tasks to run.  */
 static int lto_parallelism;
 
+#ifdef HAVE_WORKING_FORK
 /* Number of active WPA streaming processes.  */
 static int nruns = 0;
+#endif
 
 /* GNU make's jobserver info.  */
 static jobserver_info *jinfo = NULL;

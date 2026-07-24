@@ -5387,6 +5387,7 @@ get_vec_init_expr (tree t)
 #define RANGE_FOR_UNROLL(NODE)	TREE_OPERAND (RANGE_FOR_STMT_CHECK (NODE), 4)
 #define RANGE_FOR_INIT_STMT(NODE) TREE_OPERAND (RANGE_FOR_STMT_CHECK (NODE), 5)
 #define RANGE_FOR_IVDEP(NODE)	TREE_LANG_FLAG_6 (RANGE_FOR_STMT_CHECK (NODE))
+#define RANGE_FOR_NOVECTOR(NODE) TREE_LANG_FLAG_5 (RANGE_FOR_STMT_CHECK (NODE))
 
 /* STMT_EXPR accessor.  */
 #define STMT_EXPR_STMT(NODE)	TREE_OPERAND (STMT_EXPR_CHECK (NODE), 0)
@@ -6851,7 +6852,8 @@ extern void pop_switch				(void);
 extern void note_break_stmt			(void);
 extern bool note_iteration_stmt_body_start	(void);
 extern void note_iteration_stmt_body_end	(bool);
-extern void determine_local_discriminator	(tree);
+extern void determine_local_discriminator	(tree, tree = NULL_TREE);
+extern bool member_like_constrained_friend_p	(tree);
 extern bool fns_correspond			(tree, tree);
 extern int decls_match				(tree, tree, bool = true);
 extern bool maybe_version_functions		(tree, tree, bool);
@@ -6883,10 +6885,10 @@ extern tree start_decl				(const cp_declarator *, cp_decl_specifier_seq *, int, 
 extern void start_decl_1			(tree, bool);
 extern bool check_array_initializer		(tree, tree, tree);
 extern void omp_declare_variant_finalize	(tree, tree);
-extern void cp_finish_decl			(tree, tree, bool, tree, int);
+struct cp_decomp { tree decl; unsigned int count; };
+extern void cp_finish_decl			(tree, tree, bool, tree, int, cp_decomp * = nullptr);
 extern tree lookup_decomp_type			(tree);
-extern void cp_maybe_mangle_decomp		(tree, tree, unsigned int);
-extern void cp_finish_decomp			(tree, tree, unsigned int);
+extern void cp_finish_decomp			(tree, cp_decomp *);
 extern int cp_complete_array_type		(tree *, tree, bool);
 extern int cp_complete_array_type_or_error	(tree *, tree, bool, tsubst_flags_t);
 extern tree build_ptrmemfunc_type		(tree);
@@ -7305,8 +7307,9 @@ extern bool maybe_clone_body			(tree);
 /* In parser.cc */
 extern tree cp_convert_range_for (tree, tree, tree, cp_decomp *, bool,
 				  tree, bool);
-extern void cp_convert_omp_range_for (tree &, vec<tree, va_gc> *, tree &,
-				      tree &, tree &, tree &, tree &, tree &);
+extern void cp_convert_omp_range_for (tree &, tree &, tree &,
+				      tree &, tree &, tree &, tree &, tree &,
+				      bool);
 extern void cp_finish_omp_range_for (tree, tree);
 extern bool parsing_nsdmi (void);
 extern bool parsing_function_declarator ();

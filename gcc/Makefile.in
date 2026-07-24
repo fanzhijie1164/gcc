@@ -1501,8 +1501,8 @@ OBJS = \
 	incpath.o \
 	init-regs.o \
         ipa-alignment-propagation.o \
-        ipa-localize-array.o \
-        ipa-array-dse.o \
+	ipa-localize-array.o \
+	ipa-array-dse.o \
 	internal-fn.o \
 	ipa-struct-reorg/ipa-struct-reorg.o \
 	ipa-class-reorg.o \
