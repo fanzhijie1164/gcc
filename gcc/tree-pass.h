@@ -518,8 +518,6 @@ extern gimple_opt_pass *make_pass_adjust_alignment (gcc::context *ctxt);
 extern simple_ipa_opt_pass *make_pass_ipa_lower_emutls (gcc::context *ctxt);
 extern simple_ipa_opt_pass *make_pass_ipa_function_and_variable_visibility (gcc::context *ctxt);
 extern simple_ipa_opt_pass *make_pass_ipa_array_align (gcc::context *ctxt);
-extern simple_ipa_opt_pass *make_pass_ipa_strub_mode (gcc::context *ctxt);
-extern simple_ipa_opt_pass *make_pass_ipa_strub (gcc::context *ctxt);
 extern simple_ipa_opt_pass *make_pass_ipa_tree_profile (gcc::context *ctxt);
 extern simple_ipa_opt_pass *make_pass_ipa_auto_profile (gcc::context *ctxt);
 
@@ -577,7 +575,6 @@ extern rtl_opt_pass *make_pass_rtl_cprop (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_rtl_pre (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_rtl_hoist (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_hardreg_pre (gcc::context *ctxt);
-extern rtl_opt_pass *make_pass_rtl_avoid_store_forwarding (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_rtl_store_motion (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_cse_after_global_opts (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_rtl_ifcvt (gcc::context *ctxt);
@@ -623,7 +620,6 @@ extern rtl_opt_pass *make_pass_branch_prob (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_value_profile_transformations (gcc::context
 							      *ctxt);
 extern rtl_opt_pass *make_pass_postreload_cse (gcc::context *ctxt);
-extern rtl_opt_pass *make_pass_late_combine (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_gcse2 (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_split_after_reload (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_thread_prologue_and_epilogue (gcc::context
@@ -636,7 +632,6 @@ extern rtl_opt_pass *make_pass_sched_fusion (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_peephole2 (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_if_after_reload (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_regrename (gcc::context *ctxt);
-extern rtl_opt_pass *make_pass_fold_mem_offsets (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_cprop_hardreg (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_reorder_blocks (gcc::context *ctxt);
 extern rtl_opt_pass *make_pass_leaf_regs (gcc::context *ctxt);
@@ -671,9 +666,6 @@ extern gimple_opt_pass *make_pass_gimple_isel (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_harden_compares (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_harden_conditional_branches (gcc::context
 							       *ctxt);
-extern gimple_opt_pass *make_pass_harden_control_flow_redundancy (gcc::context
-								  *ctxt);
-
 extern gimple_opt_pass *make_pass_hash_prefetch (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_llc_allocate (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_expand_powcabs (gcc::context *ctxt);
