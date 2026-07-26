@@ -1645,10 +1645,10 @@ void, (struct cgraph_node *), NULL)
 DEFHOOK
 (usable,
 "This hook should return -1 if SIMD clone @var{node} shouldn't be used\n\
-in vectorized loops in current function, or non-negative number if it is\n\
-usable.  In that case, the smaller the number is, the more desirable it is\n\
-to use it.",
-int, (struct cgraph_node *), NULL)
+in vectorized loops in current function with @var{vector_mode}, or\n\
+non-negative number if it is usable.  In that case, the smaller the number\n\
+is, the more desirable it is to use it.",
+int, (struct cgraph_node *, machine_mode), NULL)
 
 HOOK_VECTOR_END (simd_clone)
 
@@ -2032,6 +2032,18 @@ same size and number of elements as @var{mode}, if such a mode exists.",
  opt_machine_mode,
  (machine_mode mode),
  default_get_mask_mode)
+
+/* Function to say whether a conditional operation is expensive when
+   compared to non-masked operations.  */
+DEFHOOK
+(conditional_operation_is_expensive,
+ "This hook returns true if masked operation @var{ifn} (really of\n\
+type @code{internal_fn}) should be considered more expensive to use than\n\
+implementing the same operation without masking.  GCC can then try to use\n\
+unconditional operations instead with extra selects.",
+ bool,
+ (unsigned ifn),
+ default_conditional_operation_is_expensive)
 
 /* Function to say whether a masked operation is expensive when the
    mask is all zeros.  */
@@ -7209,4 +7221,3 @@ DEFHOOKPOD
 
 /* Close the 'struct gcc_target' definition.  */
 HOOK_VECTOR_END (C90_EMPTY_HACK)
-
