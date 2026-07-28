@@ -27278,6 +27278,15 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
   return true;
 }
 
+/* Implement TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE.  Assume that
+   predicated operations when available are beneficial.  */
+
+static bool
+aarch64_conditional_operation_is_expensive (unsigned)
+{
+  return false;
+}
+
 /* Implement TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE.  Assume for now that
    it isn't worth branching around empty masked ops (including masked
    stores).  */
@@ -27884,12 +27893,17 @@ aarch64_simd_clone_adjust (struct cgraph_node *node)
 /* Implement TARGET_SIMD_CLONE_USABLE.  */
 
 static int
-aarch64_simd_clone_usable (struct cgraph_node *node)
+aarch64_simd_clone_usable (struct cgraph_node *node, machine_mode vector_mode)
 {
   switch (node->simdclone->vecsize_mangle)
     {
     case 'n':
-      if (!TARGET_SIMD)
+      if (!TARGET_SIMD || aarch64_sve_mode_p (vector_mode))
+	return -1;
+      return 0;
+    case 's':
+      if (!TARGET_SVE
+	  || !aarch64_sve_mode_p (vector_mode))
 	return -1;
       return 0;
     default:
@@ -28851,6 +28865,9 @@ aarch64_libgcc_floating_mode_supported_p
 #define TARGET_VECTORIZE_RELATED_MODE aarch64_vectorize_related_mode
 #undef TARGET_VECTORIZE_GET_MASK_MODE
 #define TARGET_VECTORIZE_GET_MASK_MODE aarch64_get_mask_mode
+#undef TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE
+#define TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE \
+  aarch64_conditional_operation_is_expensive
 #undef TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE
 #define TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE \
   aarch64_empty_mask_is_expensive
