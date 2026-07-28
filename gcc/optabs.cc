@@ -4375,22 +4375,6 @@ can_vec_cmp_compare_p (enum rtx_code code, machine_mode value_mode,
   return insn_predicate_matches_p (icode, 1, code, mask_mode, value_mode);
 }
 
-/* Return whether the backend can emit a vector comparison (vcond/vcondu) for
-   code CODE, comparing operands of mode CMP_OP_MODE and producing a result
-   with VALUE_MODE.  */
-
-bool
-can_vcond_compare_p (enum rtx_code code, machine_mode value_mode,
-		     machine_mode cmp_op_mode)
-{
-  enum insn_code icode
-      = get_vcond_icode (value_mode, cmp_op_mode, unsigned_optab_p (code));
-  if (icode == CODE_FOR_nothing)
-    return false;
-
-  return insn_predicate_matches_p (icode, 3, code, value_mode, cmp_op_mode);
-}
-
 /* Return whether the backend can emit vector set instructions for inserting
    element into vector at variable index position.  */
 
@@ -4406,6 +4390,30 @@ can_vec_set_var_idx_p (machine_mode vec_mode)
   rtx reg2 = alloca_raw_REG (inner_mode, LAST_VIRTUAL_REGISTER + 2);
 
   enum insn_code icode = optab_handler (vec_set_optab, vec_mode);
+
+  const struct insn_data_d *data = &insn_data[icode];
+  machine_mode idx_mode = data->operand[2].mode;
+
+  rtx reg3 = alloca_raw_REG (idx_mode, LAST_VIRTUAL_REGISTER + 3);
+
+  return icode != CODE_FOR_nothing && insn_operand_matches (icode, 0, reg1)
+	 && insn_operand_matches (icode, 1, reg2)
+	 && insn_operand_matches (icode, 2, reg3);
+}
+
+/* Return whether the backend can emit a vec_extract instruction with
+   a non-constant index.  */
+bool
+can_vec_extract_var_idx_p (machine_mode vec_mode, machine_mode extr_mode)
+{
+  if (!VECTOR_MODE_P (vec_mode))
+    return false;
+
+  rtx reg1 = alloca_raw_REG (extr_mode, LAST_VIRTUAL_REGISTER + 1);
+  rtx reg2 = alloca_raw_REG (vec_mode, LAST_VIRTUAL_REGISTER + 2);
+
+  enum insn_code icode = convert_optab_handler (vec_extract_optab,
+						vec_mode, extr_mode);
 
   const struct insn_data_d *data = &insn_data[icode];
   machine_mode idx_mode = data->operand[2].mode;
@@ -8050,6 +8058,16 @@ maybe_legitimize_operand (enum insn_code icode, unsigned int opno,
 	  goto input;
 	}
       break;
+
+    case EXPAND_UNDEFINED_INPUT:
+      /* See if the predicate accepts a SCRATCH rtx, which in this context
+	 indicates an undefined value.  Use an uninitialized register if not. */
+      if (!insn_operand_matches (icode, opno, op->value))
+	{
+	  op->value = gen_reg_rtx (op->mode);
+	  goto input;
+	}
+      return true;
     }
   return insn_operand_matches (icode, opno, op->value);
 }
@@ -8088,7 +8106,8 @@ can_reuse_operands_p (enum insn_code icode,
   switch (op1->type)
     {
     case EXPAND_OUTPUT:
-      /* Outputs must remain distinct.  */
+    case EXPAND_UNDEFINED_INPUT:
+      /* Outputs and undefined inputs must remain distinct.  */
       return false;
 
     case EXPAND_FIXED:
