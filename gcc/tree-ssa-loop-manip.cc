@@ -47,6 +47,39 @@ along with GCC; see the file COPYING3.  If not see
    so that we can free them all at once.  */
 static bitmap_obstack loop_renamer_obstack;
 
+/* Insert IV increment statements STMTS before or after INCR_POS;
+   AFTER selects which.  INCR_POS and AFTER can be computed using
+   standard_iv_increment_position.  */
+
+void
+insert_iv_increment (gimple_stmt_iterator *incr_pos, bool after,
+		     gimple_seq stmts)
+{
+  /* Prevent the increment from inheriting a bogus location if it is not put
+     immediately after a statement whose location is known.  */
+  if (after)
+    {
+      gimple_stmt_iterator gsi = *incr_pos;
+      if (!gsi_end_p (gsi))
+	gsi_next_nondebug (&gsi);
+      if (gsi_end_p (gsi))
+	{
+	  edge e = single_succ_edge (gsi_bb (*incr_pos));
+	  gimple_seq_set_location (stmts, e->goto_locus);
+	}
+      gsi_insert_seq_after (incr_pos, stmts, GSI_NEW_STMT);
+    }
+  else
+    {
+      gimple_stmt_iterator gsi = *incr_pos;
+      if (!gsi_end_p (gsi) && is_gimple_debug (gsi_stmt (gsi)))
+	gsi_next_nondebug (&gsi);
+      if (!gsi_end_p (gsi))
+	gimple_seq_set_location (stmts, gimple_location (gsi_stmt (gsi)));
+      gsi_insert_seq_before (incr_pos, stmts, GSI_NEW_STMT);
+    }
+}
+
 /* Creates an induction variable with value BASE (+/-) STEP * iteration in LOOP.
    If INCR_OP is PLUS_EXPR, the induction variable is BASE + STEP * iteration.
    If INCR_OP is MINUS_EXPR, the induction variable is BASE - STEP * iteration.
@@ -1038,29 +1071,6 @@ determine_exit_conditions (class loop *loop, class tree_niter_desc *desc,
   *exit_step = bigstep;
   *exit_cmp = cmp;
   *exit_bound = bound;
-}
-
-/* Scales the frequencies of all basic blocks in LOOP that are strictly
-   dominated by BB by NUM/DEN.  */
-
-static void
-scale_dominated_blocks_in_loop (class loop *loop, basic_block bb,
-				profile_count num, profile_count den)
-{
-  basic_block son;
-
-  if (!den.nonzero_p () && !(num == profile_count::zero ()))
-    return;
-
-  for (son = first_dom_son (CDI_DOMINATORS, bb);
-       son;
-       son = next_dom_son (CDI_DOMINATORS, son))
-    {
-      if (!flow_bb_inside_loop_p (loop, son))
-	continue;
-      scale_bbs_frequencies_profile_count (&son, 1, num, den);
-      scale_dominated_blocks_in_loop (loop, son, num, den);
-    }
 }
 
 /* Return estimated niter for LOOP after unrolling by FACTOR times.  */

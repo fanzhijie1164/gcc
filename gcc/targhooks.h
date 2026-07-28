@@ -121,6 +121,7 @@ extern opt_machine_mode default_vectorize_related_mode (machine_mode,
 							scalar_mode,
 							poly_uint64);
 extern opt_machine_mode default_get_mask_mode (machine_mode);
+extern bool default_conditional_operation_is_expensive (unsigned);
 extern bool default_empty_mask_is_expensive (unsigned);
 extern vector_costs *default_vectorize_create_costs (vec_info *, bool);
 

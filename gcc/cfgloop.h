@@ -405,6 +405,10 @@ extern void verify_loop_structure (void);
 
 /* Loop analysis.  */
 extern bool just_once_each_iteration_p (const class loop *, const_basic_block);
+extern profile_count loop_count_in (const class loop *);
+extern bool expected_loop_iterations_by_profile (const class loop *, sreal *,
+						 bool * = NULL);
+extern bool maybe_flat_loop_profile (const class loop *);
 gcov_type expected_loop_iterations_unbounded (const class loop *,
 					      bool *read_profile_p = NULL, bool by_profile_only = false);
 extern unsigned expected_loop_iterations (class loop *);

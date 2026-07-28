@@ -37,7 +37,8 @@ enum expand_operand_type {
   EXPAND_CONVERT_TO,
   EXPAND_CONVERT_FROM,
   EXPAND_ADDRESS,
-  EXPAND_INTEGER
+  EXPAND_INTEGER,
+  EXPAND_UNDEFINED_INPUT
 };
 
 /* Information about an operand for instruction expansion.  */
@@ -115,6 +116,16 @@ create_input_operand (class expand_operand *op, rtx value,
 		      machine_mode mode)
 {
   create_expand_operand (op, EXPAND_INPUT, value, mode, false);
+}
+
+/* Make OP describe an undefined input operand of mode MODE.  MODE cannot
+   be null.  */
+
+inline void
+create_undefined_input_operand (class expand_operand *op, machine_mode mode)
+{
+  create_expand_operand (op, EXPAND_UNDEFINED_INPUT, gen_rtx_SCRATCH (mode),
+			 mode, false);
 }
 
 /* Like create_input_operand, except that VALUE must first be converted
@@ -251,14 +262,10 @@ extern bool can_compare_p (enum rtx_code, machine_mode,
    with MASK_MODE.  */
 extern bool can_vec_cmp_compare_p (enum rtx_code, machine_mode, machine_mode);
 
-/* Return whether the backend can emit a vector comparison (vcond/vcondu) for
-   code CODE, comparing operands of mode CMP_OP_MODE and producing a result
-   with VALUE_MODE.  */
-extern bool can_vcond_compare_p (enum rtx_code, machine_mode, machine_mode);
-
 /* Return whether the backend can emit vector set instructions for inserting
    element into vector at variable index position.  */
 extern bool can_vec_set_var_idx_p (machine_mode);
+extern bool can_vec_extract_var_idx_p (machine_mode, machine_mode);
 
 extern rtx prepare_operand (enum insn_code, rtx, int, machine_mode,
 			    machine_mode, int);

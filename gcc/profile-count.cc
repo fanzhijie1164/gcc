@@ -465,3 +465,33 @@ profile_probability::to_sreal () const
   gcc_checking_assert (initialized_p ());
   return ((sreal)m_val) >> (n_bits - 2);
 }
+
+/* Compute square root.  */
+
+profile_probability
+profile_probability::sqrt () const
+{
+  if (!initialized_p () || *this == never () || *this == always ())
+    return *this;
+  profile_probability ret = *this;
+  ret.m_quality = MIN (ret.m_quality, ADJUSTED);
+  uint32_t min_range = m_val;
+  uint32_t max_range = max_probability;
+  if (!m_val)
+    max_range = 0;
+  if (m_val == max_probability)
+    min_range = max_probability;
+  while (min_range != max_range)
+    {
+      uint32_t val = (min_range + max_range) / 2;
+      uint32_t val2 = RDIV ((uint64_t)val * val, max_probability);
+      if (val2 == m_val)
+	min_range = max_range = m_val;
+      else if (val2 > m_val)
+	max_range = val - 1;
+      else if (val2 < m_val)
+	min_range = val + 1;
+    }
+  ret.m_val = min_range;
+  return ret;
+}

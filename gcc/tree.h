@@ -1426,6 +1426,8 @@ class auto_suppress_location_wrappers
 #define CHREC_LEFT(NODE)          TREE_OPERAND (POLYNOMIAL_CHREC_CHECK (NODE), 0)
 #define CHREC_RIGHT(NODE)         TREE_OPERAND (POLYNOMIAL_CHREC_CHECK (NODE), 1)
 #define CHREC_VARIABLE(NODE)      POLYNOMIAL_CHREC_CHECK (NODE)->base.u.chrec_var
+/* Nonzero if this chrec doesn't overflow (i.e., nonwrapping).  */
+#define CHREC_NOWRAP(NODE)        POLYNOMIAL_CHREC_CHECK (NODE)->base.nothrow_flag
 
 /* LABEL_EXPR accessor. This gives access to the label associated with
    the given label expression.  */

@@ -212,6 +212,11 @@ public:
     {
       return always () - unlikely ();
     }
+  /* Return true when value is not zero and can be used for scaling.   */
+  bool nonzero_p () const
+    {
+      return initialized_p () && m_val != 0;
+    }
 
   static profile_probability guessed_always ()
     {
@@ -541,6 +546,29 @@ public:
       return ret;
     }
 
+  /* Return *THIS * NUM / DEN.  */
+  profile_probability apply_scale (profile_probability num,
+				   profile_probability den) const
+    {
+      if (*this == never ())
+	return *this;
+      if (num == never ())
+	return num;
+      if (!initialized_p () || !num.initialized_p () || !den.initialized_p ())
+	return uninitialized ();
+      if (num == den)
+	return *this;
+      gcc_checking_assert (den.m_val);
+
+      profile_probability ret;
+      uint64_t val;
+      safe_scale_64bit (m_val, num.m_val, den.m_val, &val);
+      ret.m_val = MIN (val, max_probability);
+      ret.m_quality = MIN (MIN (MIN (m_quality, ADJUSTED),
+				     num.m_quality), den.m_quality);
+      return ret;
+    }
+
   /* Return true when the probability of edge is reliable.
 
      The profile guessing code is good at predicting branch outcome (i.e.
@@ -621,6 +649,9 @@ public:
       *this = apply_scale (1, den);
       return *this;
     }
+
+  /* Compute square root.  */
+  profile_probability sqrt () const;
 
   /* Get the value of the count.  */
   uint32_t value () const { return m_val; }
