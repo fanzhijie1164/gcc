@@ -6614,8 +6614,8 @@ static vect_recog_func vect_vect_recog_func_ptrs[] = {
   { vect_recog_gather_scatter_pattern, "gather_scatter" },
   { vect_recog_cond_store_pattern, "cond_store" },
   { vect_recog_mask_conversion_pattern, "mask_conversion" },
-  { vect_recog_widen_plus_pattern, "widen_plus" },
-  { vect_recog_widen_minus_pattern, "widen_minus" },
+  /* { vect_recog_widen_plus_pattern, "widen_plus" }, */
+  /* { vect_recog_widen_minus_pattern, "widen_minus" }, */
   { vect_recog_widen_abd_pattern, "widen_abd" },
   /* These must come after the double widening ones.  */
 };
