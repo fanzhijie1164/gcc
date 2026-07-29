@@ -4052,6 +4052,8 @@ vect_prune_runtime_alias_test_list (loop_vec_info loop_vinfo)
     {
       poly_uint64 lower_bound;
       tree segment_length_a, segment_length_b;
+      tree segment_length2_a, segment_length2_b;
+      tree segment_length_outer_a, segment_length_outer_b;
       unsigned HOST_WIDE_INT access_size_a, access_size_b;
       unsigned HOST_WIDE_INT align_a, align_b;
 
@@ -4157,6 +4159,10 @@ vect_prune_runtime_alias_test_list (loop_vec_info loop_vinfo)
 	{
 	  segment_length_a = size_zero_node;
 	  segment_length_b = size_zero_node;
+	  segment_length2_a = size_zero_node;
+	  segment_length2_b = size_zero_node;
+	  segment_length_outer_a = size_zero_node;
+	  segment_length_outer_b = size_zero_node;
 	}
       else
 	{
@@ -4167,6 +4173,38 @@ vect_prune_runtime_alias_test_list (loop_vec_info loop_vinfo)
 	    length_factor = size_int (vect_factor);
 	  segment_length_a = vect_vfa_segment_size (dr_info_a, length_factor);
 	  segment_length_b = vect_vfa_segment_size (dr_info_b, length_factor);
+	  segment_length2_a
+	    = vect_vfa_segment_size (dr_info_a, scalar_loop_iters);
+	  segment_length2_b
+	    = vect_vfa_segment_size (dr_info_b, scalar_loop_iters);
+	  segment_length_outer_a = NULL_TREE;
+	  segment_length_outer_b = NULL_TREE;
+
+	  if (flag_hoist_runtime_checks)
+	    {
+	      class loop *inner_loop = LOOP_VINFO_LOOP (loop_vinfo);
+	      class loop *outer_loop = loop_outer (inner_loop);
+	      tree outer_loop_niters = number_of_latch_executions (outer_loop);
+	      tree inner_loop_niters = number_of_latch_executions (inner_loop);
+	      const_tree inner_type = (inner_loop_niters
+			       ? TREE_TYPE (inner_loop_niters) : NULL_TREE);
+	      const_tree outer_type = (outer_loop_niters
+			       ? TREE_TYPE (outer_loop_niters) : NULL_TREE);
+	      if (outer_loop && outer_loop->num
+		  && inner_loop && inner_loop->num
+		  && outer_type && inner_type
+		  && INTEGRAL_TYPE_P (inner_type)
+		  && INTEGRAL_TYPE_P (outer_type)
+		  && int_binop_types_match_p (MULT_EXPR, outer_type, inner_type))
+		{
+		  tree niters_product
+		    = size_binop (MULT_EXPR, outer_loop_niters, inner_loop_niters);
+		  segment_length_outer_a
+		    = vect_vfa_segment_size (dr_info_a, niters_product);
+		  segment_length_outer_b
+		    = vect_vfa_segment_size (dr_info_b, niters_product);
+		}
+	    }
 	}
       access_size_a = vect_vfa_access_size (loop_vinfo, dr_info_a);
       access_size_b = vect_vfa_access_size (loop_vinfo, dr_info_b);
@@ -4217,9 +4255,12 @@ vect_prune_runtime_alias_test_list (loop_vec_info loop_vinfo)
       align_a = std::min (align_a, least_bit_hwi (access_size_a));
       align_b = std::min (align_b, least_bit_hwi (access_size_b));
 
+
       dr_with_seg_len dr_a (dr_info_a->dr, segment_length_a,
+			    segment_length2_a, segment_length_outer_a,
 			    access_size_a, align_a);
-      dr_with_seg_len dr_b (dr_info_b->dr, segment_length_b,
+	      dr_with_seg_len dr_b (dr_info_b->dr, segment_length_b,
+			    segment_length2_b, segment_length_outer_b,
 			    access_size_b, align_b);
       /* Canonicalize the order to be the one that's needed for accurate
 	 RAW, WAR and WAW flags, in cases where the data references are
