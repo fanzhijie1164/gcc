@@ -1015,6 +1015,10 @@ vect_slp_analyze_store_dependences (vec_info *vinfo, slp_tree node)
 	     stmt we have to resort to the alias oracle.  */
 	  stmt_vec_info stmt_info = vinfo->lookup_stmt (stmt);
 	  data_reference *dr_b = STMT_VINFO_DATA_REF (stmt_info);
+	  if (flag_tree_slp_restricted_data_dependence_analyze
+	      && dr_b
+	      && TREE_CODE (TREE_TYPE (DR_REF (dr_b))) == VECTOR_TYPE)
+	    continue;
 	  if (!dr_b)
 	    {
 	      /* We are moving a store - this means
@@ -1110,6 +1114,10 @@ vect_slp_analyze_load_dependences (vec_info *vinfo, slp_tree node,
 		  /* If we couldn't record a (single) data reference for this
 		     stmt we have to give up now.  */
 		  data_reference *dr_b = STMT_VINFO_DATA_REF (stmt_info);
+		  if (flag_tree_slp_restricted_data_dependence_analyze
+		      && dr_b
+		      && TREE_CODE (TREE_TYPE (DR_REF (dr_b))) == VECTOR_TYPE)
+		    return true;
 		  if (!dr_b)
 		    return false;
 		  ddr_p ddr = initialize_data_dependence_relation (dr_a,
