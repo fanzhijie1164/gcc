@@ -642,7 +642,7 @@ doloop_optimize (class loop *loop)
 {
   scalar_int_mode mode;
   rtx doloop_reg;
-  rtx count;
+  rtx count = NULL_RTX;
   widest_int iterations, iterations_max;
   rtx_code_label *start_label;
   rtx condition;
@@ -685,17 +685,6 @@ doloop_optimize (class loop *loop)
       return false;
     }
 
-  max_cost
-    = COSTS_N_INSNS (param_max_iterations_computation_cost);
-  if (set_src_cost (desc->niter_expr, mode, optimize_loop_for_speed_p (loop))
-      > max_cost)
-    {
-      if (dump_file)
-	fprintf (dump_file,
-		 "Doloop: number of iterations too costly to compute.\n");
-      return false;
-    }
-
   if (desc->const_iter)
     iterations = widest_int::from (rtx_mode_t (desc->niter_expr, mode),
 				   UNSIGNED);
@@ -716,12 +705,25 @@ doloop_optimize (class loop *loop)
 
   /* Generate looping insn.  If the pattern FAILs then give up trying
      to modify the loop since there is some aspect the back-end does
-     not like.  */
-  count = copy_rtx (desc->niter_expr);
+     not like.  If this succeeds, there is a chance that the loop
+     desc->niter_expr has been altered by the backend, so only extract
+     that data after the gen_doloop_end.  */
   start_label = block_label (desc->in_edge->dest);
   doloop_reg = gen_reg_rtx (mode);
   rtx_insn *doloop_seq = targetm.gen_doloop_end (doloop_reg, start_label);
 
+  max_cost
+    = COSTS_N_INSNS (param_max_iterations_computation_cost);
+  if (set_src_cost (desc->niter_expr, mode, optimize_loop_for_speed_p (loop))
+      > max_cost)
+    {
+      if (dump_file)
+	fprintf (dump_file,
+		 "Doloop: number of iterations too costly to compute.\n");
+      return false;
+    }
+
+  count = copy_rtx (desc->niter_expr);
   word_mode_size = GET_MODE_PRECISION (word_mode);
   word_mode_max = (HOST_WIDE_INT_1U << (word_mode_size - 1) << 1) - 1;
   if (! doloop_seq
