@@ -1136,6 +1136,8 @@ public:
 #define LOOP_VINFO_EARLY_BRK_STORES(L)     (L)->early_break_stores
 #define LOOP_VINFO_EARLY_BREAKS_VECT_PEELED(L)  \
   (single_pred ((L)->loop->latch) != (L)->vec_loop_iv_exit->src)
+#define LOOP_VINFO_EARLY_BREAKS_LIVE_IVS(L)  \
+  (L)->early_break_live_ivs
 #define LOOP_VINFO_EARLY_BRK_NITERS_VAR(L) (L)->early_break_niters_var
 #define LOOP_VINFO_EARLY_BRK_DEST_BB(L)    (L)->early_break_dest_bb
 #define LOOP_VINFO_EARLY_BRK_VUSES(L)      (L)->early_break_vuses
