@@ -707,8 +707,9 @@ public:
        operand.  The optab is keyed off the multiplication mode.  */
     e.rotate_inputs_left (0, 3);
     insn_code icode
-      = e.direct_optab_handler_for_sign (sdot_prod_optab, udot_prod_optab,
-					 0, GET_MODE (e.args[0]));
+      = e.convert_optab_handler_for_sign (sdot_prod_optab, udot_prod_optab,
+					  0, TYPE_MODE (TREE_TYPE (TREE_TYPE (e.fndecl))),
+					  GET_MODE (e.args[0]));
     return e.use_unpred_insn (icode);
   }
 };
@@ -2589,7 +2590,9 @@ public:
        Hence we do the same rotation on arguments as svdot_impl does.  */
     e.rotate_inputs_left (0, 3);
     machine_mode mode = e.vector_mode (0);
-    insn_code icode = code_for_dot_prod (UNSPEC_USDOT, mode);
+    insn_code icode
+      = code_for_dot_prod (UNSPEC_USDOT,
+			   TYPE_MODE (TREE_TYPE (TREE_TYPE (e.fndecl))), mode);
     return e.use_exact_insn (icode);
   }
 
