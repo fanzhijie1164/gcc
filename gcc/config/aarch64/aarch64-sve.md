@@ -6960,7 +6960,7 @@
 ;; -------------------------------------------------------------------------
 
 ;; Four-element integer dot-product with accumulation.
-(define_insn "<sur>dot_prod<vsi2qi>"
+(define_insn "<sur>dot_prod<mode><vsi2qi>"
   [(set (match_operand:SVE_FULL_SDI 0 "register_operand" "=w, ?&w")
 	(plus:SVE_FULL_SDI
 	  (unspec:SVE_FULL_SDI
@@ -6994,7 +6994,7 @@
   [(set_attr "movprfx" "*,yes")]
 )
 
-(define_insn "@<sur>dot_prod<vsi2qi>"
+(define_insn "@<sur>dot_prod<mode><vsi2qi>"
   [(set (match_operand:VNx4SI_ONLY 0 "register_operand" "=w, ?&w")
         (plus:VNx4SI_ONLY
 	  (unspec:VNx4SI_ONLY
@@ -7052,7 +7052,8 @@
     rtx ones = force_reg (<VSI2QI>mode, CONST1_RTX (<VSI2QI>mode));
     rtx diff = gen_reg_rtx (<VSI2QI>mode);
     emit_insn (gen_<su>abd<vsi2qi>3 (diff, operands[1], operands[2]));
-    emit_insn (gen_udot_prod<vsi2qi> (operands[0], diff, ones, operands[3]));
+    emit_insn (gen_udot_prod<mode><vsi2qi> (operands[0], diff, ones,
+					    operands[3]));
     DONE;
   }
 )

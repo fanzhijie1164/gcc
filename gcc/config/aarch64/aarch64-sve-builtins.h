@@ -527,6 +527,8 @@ public:
   insn_code direct_optab_handler (optab, unsigned int = 0);
   insn_code direct_optab_handler_for_sign (optab, optab, unsigned int = 0,
 					   machine_mode = E_VOIDmode);
+  insn_code convert_optab_handler_for_sign (optab, optab, unsigned int,
+					    machine_mode, machine_mode);
 
   bool overlaps_input_p (rtx);
 
