@@ -1244,7 +1244,8 @@
   [(set (match_operand:SVE_ALL 0 "register_operand" "=w")
 	(unspec:SVE_ALL
 	  [(match_operand:<VPRED> 2 "register_operand" "Upl")
-	   (match_operand:SVE_ALL 1 "memory_operand" "m")]
+	   (match_operand:SVE_ALL 1 "memory_operand" "m")
+	   (match_operand:SVE_ALL 3 "aarch64_maskload_else_operand")]
 	  UNSPEC_LD1_SVE))]
   "TARGET_SVE"
   "ld1<Vesize>\t%0.<Vctype>, %2/z, %1"
@@ -1255,11 +1256,13 @@
   [(set (match_operand:SVE_STRUCT 0 "register_operand")
 	(unspec:SVE_STRUCT
 	  [(match_dup 2)
-	   (match_operand:SVE_STRUCT 1 "memory_operand")]
+	   (match_operand:SVE_STRUCT 1 "memory_operand")
+	   (match_dup 3)]
 	  UNSPEC_LDN))]
   "TARGET_SVE"
   {
     operands[2] = aarch64_ptrue_reg (<VPRED>mode);
+    operands[3] = CONST0_RTX (<MODE>mode);
   }
 )
 
@@ -1268,7 +1271,8 @@
   [(set (match_operand:SVE_STRUCT 0 "register_operand" "=w")
 	(unspec:SVE_STRUCT
 	  [(match_operand:<VPRED> 2 "register_operand" "Upl")
-	   (match_operand:SVE_STRUCT 1 "memory_operand" "m")]
+	   (match_operand:SVE_STRUCT 1 "memory_operand" "m")
+	   (match_operand 3 "aarch64_maskload_else_operand")]
 	  UNSPEC_LDN))]
   "TARGET_SVE"
   "ld<vector_count><Vesize>\t%0, %2/z, %1"
@@ -1287,7 +1291,28 @@
 ;; -------------------------------------------------------------------------
 
 ;; Predicated load and extend, with 8 elements per 128-bit block.
-(define_insn_and_rewrite "@aarch64_load<SVE_PRED_LOAD:pred_load>_<ANY_EXTEND:optab><SVE_HSDI:mode><SVE_PARTIAL_I:mode>"
+(define_insn_and_rewrite "@aarch64_load_<ANY_EXTEND:optab><SVE_HSDI:mode><SVE_PARTIAL_I:mode>"
+  [(set (match_operand:SVE_HSDI 0 "register_operand" "=w")
+	(unspec:SVE_HSDI
+	  [(match_operand:<SVE_HSDI:VPRED> 3 "general_operand" "UplDnm")
+	   (ANY_EXTEND:SVE_HSDI
+	     (unspec:SVE_PARTIAL_I
+	       [(match_operand:<SVE_PARTIAL_I:VPRED> 2 "register_operand" "Upl")
+		(match_operand:SVE_PARTIAL_I 1 "memory_operand" "m")
+		(match_operand:SVE_PARTIAL_I 4 "aarch64_maskload_else_operand")]
+	       UNSPEC_LD1_SVE))]
+	  UNSPEC_PRED_X))]
+  "TARGET_SVE && (~<SVE_HSDI:narrower_mask> & <SVE_PARTIAL_I:self_mask>) == 0"
+  "ld1<ANY_EXTEND:s><SVE_PARTIAL_I:Vesize>\t%0.<SVE_HSDI:Vctype>, %2/z, %1"
+  "&& !CONSTANT_P (operands[3])"
+  {
+    operands[3] = CONSTM1_RTX (<SVE_HSDI:VPRED>mode);
+  }
+)
+
+;; Same as above without the maskload_else_operand to still allow combine to
+;; match a sign-extended pred_mov pattern.
+(define_insn_and_rewrite "*aarch64_load_<ANY_EXTEND:optab>_mov<SVE_HSDI:mode><SVE_PARTIAL_I:mode>"
   [(set (match_operand:SVE_HSDI 0 "register_operand" "=w")
 	(unspec:SVE_HSDI
 	  [(match_operand:<SVE_HSDI:VPRED> 3 "general_operand" "UplDnm")
@@ -1295,8 +1320,8 @@
 	     (unspec:SVE_PARTIAL_I
 	       [(match_operand:<SVE_PARTIAL_I:VPRED> 2 "register_operand" "Upl")
 		(match_operand:SVE_PARTIAL_I 1 "memory_operand" "m")]
-	       SVE_PRED_LOAD))]
-	  UNSPEC_PRED_X))]
+		UNSPEC_PRED_X))]
+	   UNSPEC_PRED_X))]
   "TARGET_SVE && (~<SVE_HSDI:narrower_mask> & <SVE_PARTIAL_I:self_mask>) == 0"
   "ld1<ANY_EXTEND:s><SVE_PARTIAL_I:Vesize>\t%0.<SVE_HSDI:Vctype>, %2/z, %1"
   "&& !CONSTANT_P (operands[3])"
@@ -1384,7 +1409,8 @@
   [(set (match_operand:SVE_FULL 0 "register_operand" "=w")
 	(unspec:SVE_FULL
 	  [(match_operand:<VPRED> 2 "register_operand" "Upl")
-	   (match_operand:SVE_FULL 1 "memory_operand" "m")]
+	   (match_operand:SVE_FULL 1 "memory_operand" "m")
+	   (match_operand:SVE_FULL 3 "aarch64_maskload_else_operand")]
 	  UNSPEC_LDNT1_SVE))]
   "TARGET_SVE"
   "ldnt1<Vesize>\t%0.<Vetype>, %2/z, %1"
@@ -1407,11 +1433,13 @@
 	   (match_operand:<V_INT_CONTAINER> 2 "register_operand")
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_dup 6)
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
   {
     operands[5] = aarch64_ptrue_reg (<VPRED>mode);
+    operands[6] = CONST0_RTX (<MODE>mode);
   }
 )
 
@@ -1425,6 +1453,7 @@
 	   (match_operand:VNx4SI 2 "register_operand")
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_operand:SVE_4 6 "aarch64_maskload_else_operand")
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
@@ -1454,6 +1483,7 @@
 	   (match_operand:VNx2DI 2 "register_operand")
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_operand:SVE_2 6 "aarch64_maskload_else_operand")
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
@@ -1482,6 +1512,7 @@
 	     UNSPEC_PRED_X)
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_operand:SVE_2 7 "aarch64_maskload_else_operand")
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
@@ -1512,6 +1543,7 @@
 	     UNSPEC_PRED_X)
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_operand:SVE_2 7 "aarch64_maskload_else_operand")
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
@@ -1539,6 +1571,7 @@
 	     (match_operand:VNx2DI 6 "aarch64_sve_uxtw_immediate"))
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:DI 4 "aarch64_gather_scale_operand_<Vesize>")
+	   (match_operand:SVE_2 7 "aarch64_maskload_else_operand")
 	   (mem:BLK (scratch))]
 	  UNSPEC_LD1_GATHER))]
   "TARGET_SVE"
@@ -1575,6 +1608,7 @@
 		(match_operand:VNx4SI 2 "register_operand")
 		(match_operand:DI 3 "const_int_operand")
 		(match_operand:DI 4 "aarch64_gather_scale_operand_<SVE_4BHI:Vesize>")
+		(match_operand:SVE_4BHI 7 "aarch64_maskload_else_operand")
 		(mem:BLK (scratch))]
 	       UNSPEC_LD1_GATHER))]
 	  UNSPEC_PRED_X))]
@@ -1612,6 +1646,7 @@
 		(match_operand:VNx2DI 2 "register_operand")
 		(match_operand:DI 3 "const_int_operand")
 		(match_operand:DI 4 "aarch64_gather_scale_operand_<SVE_2BHSI:Vesize>")
+		(match_operand:SVE_2BHSI 7 "aarch64_maskload_else_operand")
 		(mem:BLK (scratch))]
 	       UNSPEC_LD1_GATHER))]
 	  UNSPEC_PRED_X))]
@@ -1648,6 +1683,7 @@
 		  UNSPEC_PRED_X)
 		(match_operand:DI 3 "const_int_operand")
 		(match_operand:DI 4 "aarch64_gather_scale_operand_<SVE_2BHSI:Vesize>")
+		(match_operand:SVE_2BHSI 8 "aarch64_maskload_else_operand")
 		(mem:BLK (scratch))]
 	       UNSPEC_LD1_GATHER))]
 	  UNSPEC_PRED_X))]
@@ -1683,6 +1719,7 @@
 		  UNSPEC_PRED_X)
 		(match_operand:DI 3 "const_int_operand")
 		(match_operand:DI 4 "aarch64_gather_scale_operand_<SVE_2BHSI:Vesize>")
+		(match_operand:SVE_2BHSI 8 "aarch64_maskload_else_operand")
 		(mem:BLK (scratch))]
 	       UNSPEC_LD1_GATHER))]
 	  UNSPEC_PRED_X))]
@@ -1715,6 +1752,7 @@
 		  (match_operand:VNx2DI 6 "aarch64_sve_uxtw_immediate"))
 		(match_operand:DI 3 "const_int_operand")
 		(match_operand:DI 4 "aarch64_gather_scale_operand_<SVE_2BHSI:Vesize>")
+		(match_operand:SVE_2BHSI 8 "aarch64_maskload_else_operand")
 		(mem:BLK (scratch))]
 	       UNSPEC_LD1_GATHER))]
 	  UNSPEC_PRED_X))]

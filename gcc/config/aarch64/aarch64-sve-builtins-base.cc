@@ -1264,11 +1264,12 @@ public:
     gimple_seq stmts = NULL;
     tree pred = f.convert_pred (stmts, vectype, 0);
     tree base = f.fold_contiguous_base (stmts, vectype);
+    tree els = build_zero_cst (vectype);
     gsi_insert_seq_before (f.gsi, stmts, GSI_SAME_STMT);
 
     tree cookie = f.load_store_cookie (TREE_TYPE (vectype));
-    gcall *new_call = gimple_build_call_internal (IFN_MASK_LOAD, 3,
-						  base, cookie, pred);
+    gcall *new_call = gimple_build_call_internal (IFN_MASK_LOAD, 4,
+					  base, cookie, pred, els);
     gimple_call_set_lhs (new_call, f.lhs);
     return new_call;
   }
@@ -1278,7 +1279,7 @@ public:
   {
     insn_code icode = convert_optab_handler (maskload_optab,
 					     e.vector_mode (0), e.gp_mode (0));
-    return e.use_contiguous_load_insn (icode);
+    return e.use_contiguous_load_insn (icode, true);
   }
 };
 
@@ -1291,10 +1292,10 @@ public:
   rtx
   expand (function_expander &e) const override
   {
-    insn_code icode = code_for_aarch64_load (UNSPEC_LD1_SVE, extend_rtx_code (),
+    insn_code icode = code_for_aarch64_load (extend_rtx_code (),
 					     e.vector_mode (0),
 					     e.memory_vector_mode ());
-    return e.use_contiguous_load_insn (icode);
+    return e.use_contiguous_load_insn (icode, true);
   }
 };
 
@@ -1313,6 +1314,8 @@ public:
     e.prepare_gather_address_operands (1);
     /* Put the predicate last, as required by mask_gather_load_optab.  */
     e.rotate_inputs_left (0, 5);
+    /* Add the else operand.  */
+    e.args.quick_push (CONST0_RTX (e.vector_mode (0)));
     machine_mode mem_mode = e.memory_vector_mode ();
     machine_mode int_mode = aarch64_sve_int_mode (mem_mode);
     insn_code icode = convert_optab_handler (mask_gather_load_optab,
@@ -1336,6 +1339,8 @@ public:
     e.rotate_inputs_left (0, 5);
     /* Add a constant predicate for the extension rtx.  */
     e.args.quick_push (CONSTM1_RTX (VNx16BImode));
+    /* Add the else operand.  */
+    e.args.quick_push (CONST0_RTX (e.vector_mode (1)));
     insn_code icode = code_for_aarch64_gather_load (extend_rtx_code (),
 						    e.vector_mode (0),
 						    e.memory_vector_mode ());
@@ -1478,6 +1483,7 @@ public:
     /* Get the predicate and base pointer.  */
     gimple_seq stmts = NULL;
     tree pred = f.convert_pred (stmts, vectype, 0);
+    tree els = build_zero_cst (vectype);
     tree base = f.fold_contiguous_base (stmts, vectype);
     gsi_insert_seq_before (f.gsi, stmts, GSI_SAME_STMT);
 
@@ -1496,8 +1502,8 @@ public:
 
     /* Emit the load itself.  */
     tree cookie = f.load_store_cookie (TREE_TYPE (vectype));
-    gcall *new_call = gimple_build_call_internal (IFN_MASK_LOAD_LANES, 3,
-						  base, cookie, pred);
+    gcall *new_call = gimple_build_call_internal (IFN_MASK_LOAD_LANES, 4,
+					  base, cookie, pred, els);
     gimple_call_set_lhs (new_call, lhs_array);
     gsi_insert_after (f.gsi, new_call, GSI_SAME_STMT);
 
@@ -1510,7 +1516,7 @@ public:
     machine_mode tuple_mode = TYPE_MODE (TREE_TYPE (e.call_expr));
     insn_code icode = convert_optab_handler (vec_mask_load_lanes_optab,
 					     tuple_mode, e.vector_mode (0));
-    return e.use_contiguous_load_insn (icode);
+    return e.use_contiguous_load_insn (icode, true);
   }
 };
 
@@ -1578,7 +1584,7 @@ public:
   expand (function_expander &e) const override
   {
     insn_code icode = code_for_aarch64_ldnt1 (e.vector_mode (0));
-    return e.use_contiguous_load_insn (icode);
+    return e.use_contiguous_load_insn (icode, true);
   }
 };
 

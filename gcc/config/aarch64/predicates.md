@@ -1014,3 +1014,7 @@
   (and (match_code "const_int")
        (match_test "IN_RANGE (INTVAL (op),  -4096, 4080)
 		    && !(INTVAL (op) & 0xf)")))
+
+(define_predicate "aarch64_maskload_else_operand"
+  (and (match_code "const_int,const_vector")
+       (match_test "op == CONST0_RTX (GET_MODE (op))")))
