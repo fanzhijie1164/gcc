@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-additional-options "-O3 -march=armv8-a --param aarch64-autovec-preference=1 -std=gnu99" } */
+/* { dg-additional-options "-O3 -march=armv8-a --param aarch64-autovec-preference=asimd-only -std=gnu99" } */
 /* { dg-final { check-function-bodies "**" "" "" } } */
 
 /*
