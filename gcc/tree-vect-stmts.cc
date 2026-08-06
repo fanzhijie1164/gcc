@@ -2403,21 +2403,15 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 						  vectype, misalign)))
 		   == dr_aligned
 		  || alss == dr_unaligned_supported)
-	      && ((!flag_enhance_vector_pack
-		   && known_eq (nunits, (group_size - gap) * 2)
-		   && known_eq (nunits, group_size)
-		   && (vector_vector_composition_type (vectype, 2, &half_vtype)
-		       != NULL_TREE))
-		  || (flag_enhance_vector_pack
-		      && can_div_trunc_p (group_size
-					  * LOOP_VINFO_VECT_FACTOR (loop_vinfo) - gap,
-					  nunits, &tem, &remain)
-		      && (known_eq (remain, 0u)
-			  || (known_ne (remain, 0u)
-			      && constant_multiple_p (nunits, remain, &num)
-			      && (vector_vector_composition_type (vectype, num,
+	      && can_div_trunc_p (group_size
+				  * LOOP_VINFO_VECT_FACTOR (loop_vinfo) - gap,
+				  nunits, &tem, &remain)
+	      && (known_eq (remain, 0u)
+		  || (known_ne (remain, 0u)
+		      && constant_multiple_p (nunits, remain, &num)
+		      && (vector_vector_composition_type (vectype, num,
 						  &half_vtype)
-				  != NULL_TREE))))))
+			  != NULL_TREE))))
 	    overrun_p = false;
 
 	  if (overrun_p && !can_overrun_p)
@@ -13114,7 +13108,7 @@ vectorizable_load (vec_info *vinfo,
 		    new_stmt = call;
 		    data_ref = NULL_TREE;
 		  }
-		else if (flag_enhance_vector_pack)
+		else
 		  {
 		    tree ltype = vectype;
 		    tree new_vtype = NULL_TREE;
@@ -13274,87 +13268,6 @@ vectorizable_load (vec_info *vinfo,
 			      build1 (VIEW_CONVERT_EXPR, vectype, new_vname));
 			  }
 			      }
-		  }
-		else
-		  {
-		    tree ltype = vectype;
-		    tree new_vtype = NULL_TREE;
-		    unsigned HOST_WIDE_INT gap = DR_GROUP_GAP (first_stmt_info);
-		    unsigned int vect_align
-		      = vect_known_alignment_in_bytes (first_dr_info, vectype);
-		    unsigned int scalar_dr_size
-		      = vect_get_scalar_dr_size (first_dr_info);
-		    /* If there's no peeling for gaps but we have a gap with SLP
-		       loads then load the lower half of the vector only.  */
-		    if (slp
-			&& loop_vinfo
-			&& !LOOP_VINFO_PEELING_FOR_GAPS (loop_vinfo)
-			&& gap != 0
-			&& known_eq (nunits, (group_size - gap) * 2)
-			&& known_eq (nunits, group_size)
-			&& gap >= (vect_align / scalar_dr_size))
-		      {
-			tree half_vtype;
-			new_vtype
-			  = vector_vector_composition_type (vectype, 2, &half_vtype);
-			if (new_vtype != NULL_TREE)
-			  ltype = half_vtype;
-		      }
-		    tree offset
-		      = (dataref_offset ? dataref_offset
-					: build_int_cst (ref_type, 0));
-		    if (ltype != vectype
-			&& memory_access_type == VMAT_CONTIGUOUS_REVERSE)
-		      {
-			unsigned HOST_WIDE_INT gap_offset
-			  = gap * tree_to_uhwi (TYPE_SIZE_UNIT (elem_type));
-			tree gapcst = build_int_cst (ref_type, gap_offset);
-			offset = size_binop (PLUS_EXPR, offset, gapcst);
-		      }
-		    data_ref = fold_build2 (MEM_REF, ltype, dataref_ptr, offset);
-		    if (alignment_support_scheme == dr_aligned
-			&& align >= TYPE_ALIGN_UNIT (ltype))
-		      ;
-		    else
-		      TREE_TYPE (data_ref)
-			= build_aligned_type (TREE_TYPE (data_ref),
-					      align * BITS_PER_UNIT);
-		    if (ltype != vectype)
-		      {
-			vect_copy_ref_info (data_ref, DR_REF (first_dr_info->dr));
-			tree tem = make_ssa_name (ltype);
-			new_stmt = gimple_build_assign (tem, data_ref);
-			vect_finish_stmt_generation (vinfo, stmt_info, new_stmt, gsi);
-			data_ref = NULL;
-			vec<constructor_elt, va_gc> *v;
-			vec_alloc (v, 2);
-			if (memory_access_type == VMAT_CONTIGUOUS_REVERSE)
-			  {
-			    CONSTRUCTOR_APPEND_ELT (v, NULL_TREE,
-						    build_zero_cst (ltype));
-			    CONSTRUCTOR_APPEND_ELT (v, NULL_TREE, tem);
-			  }
-			else
-			  {
-			    CONSTRUCTOR_APPEND_ELT (v, NULL_TREE, tem);
-			    CONSTRUCTOR_APPEND_ELT (v, NULL_TREE,
-						    build_zero_cst (ltype));
-			  }
-			gcc_assert (new_vtype != NULL_TREE);
-			if (new_vtype == vectype)
-			  new_stmt = gimple_build_assign (
-			    vec_dest, build_constructor (vectype, v));
-			else
-			  {
-			    tree new_vname = make_ssa_name (new_vtype);
-			    new_stmt = gimple_build_assign (
-			      new_vname, build_constructor (new_vtype, v));
-			    vect_finish_stmt_generation (vinfo, stmt_info, new_stmt, gsi);
-			    new_stmt = gimple_build_assign (
-			      vec_dest,
-			      build1 (VIEW_CONVERT_EXPR, vectype, new_vname));
-			  }
-		      }
 		  }
 		break;
 	      }
