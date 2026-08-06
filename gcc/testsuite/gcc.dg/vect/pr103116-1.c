@@ -47,4 +47,4 @@ main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump "Data access with gaps requires scalar epilogue loop" "vect" { target { vect_perm && vect_int } } } } */
+/* { dg-final { scan-tree-dump "vectorized 1 loops" "vect" { target { vect_perm && vect_int } } } } */
