@@ -3215,7 +3215,7 @@ ipa_array_dse::add_bound_param (tree param)
 
   tree param_name = DECL_NAME (param);
   const char *name = concat (IDENTIFIER_POINTER (param_name), ".bound", NULL);
-  ipa_adjusted_param adj;
+  ipa_adjusted_param adj = {};
   adj.type = TREE_TYPE (param);
   adj.base_index = arg_decls.length ();
   adj.prev_clone_index = arg_decls.length ();
