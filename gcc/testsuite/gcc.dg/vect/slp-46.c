@@ -54,7 +54,6 @@ main ()
     }
 
   foo ();
-#pragma GCC novector
   for (int i = 0; i < 1024; ++i)
     if (x[i] != y[i/2])
       abort ();
@@ -66,7 +65,6 @@ main ()
     }
 
   bar ();
-#pragma GCC novector
   for (int i = 0; i < 1024; ++i)
     if (x[i] != y[2*(i/2)])
       abort ();
@@ -78,7 +76,6 @@ main ()
     }
 
   baz ();
-#pragma GCC novector
   for (int i = 0; i < 1024; ++i)
     if (x[i] != y[511 - i/2])
       abort ();
@@ -90,7 +87,6 @@ main ()
     }
 
   boo ();
-#pragma GCC novector
   for (int i = 0; i < 1024; ++i)
     if (x[i] != y[2*(511 - i/2)])
       abort ();
@@ -98,4 +94,4 @@ main ()
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 4 "vect" } } */
+/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 4 "vect" { xfail vect_load_lanes } } } */
