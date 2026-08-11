@@ -10250,14 +10250,16 @@ vectorizable_store (vec_info *vinfo,
 	  unsigned int ncontinues = group_size_b / const_nunits;
 	  unsigned int k = 0;
 	  for (unsigned int scalar_store_i = 0;
-	       scalar_store_i < BB_VINFO_SCALAR_STORES (bb_vinfo).length ();
-	       ++scalar_store_i)
+	       scalar_store_i < BB_VINFO_SCALAR_STORES (bb_vinfo).length ();)
 	    {
 	      const vec<stmt_vec_info> &scalar_stores
 		= BB_VINFO_SCALAR_STORES (bb_vinfo)[scalar_store_i];
 	      stmt_vec_info first_stmt_b = scalar_stores[0];
 	      if (first_stmt_b->group_number != first_stmt_info->group_number)
-		continue;
+		{
+		  ++scalar_store_i;
+		  continue;
+		}
 	      bool simd_lane_access_p
 		= STMT_VINFO_SIMD_LANE_ACCESS_P (first_stmt_b) != 0;
 	      tree trans_ref_type
@@ -10279,6 +10281,11 @@ vectorizable_store (vec_info *vinfo,
 				       cur_first_dr_info, trans_vec_oprnd, gsi,
 				       first_stmt_b);
 		}
+	      /* Scheduling removes the scalar stores and releases their
+		 stmt_vec_info objects.  Do not leave pointers to those objects for
+		 a later SLP instance to inspect.  */
+	      BB_VINFO_SCALAR_STORES (bb_vinfo)[scalar_store_i].release ();
+	      BB_VINFO_SCALAR_STORES (bb_vinfo).ordered_remove (scalar_store_i);
 	    }
 	  gcc_assert (k == result_chain.length ());
 	  if (dump_enabled_p ())
