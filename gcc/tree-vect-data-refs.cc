@@ -6302,6 +6302,13 @@ vect_transpose_store_chain (vec_info *vinfo, vec<tree> dr_chain,
   tree perm_mask_high = NULL;
   unsigned int log_length = exact_log2 (length);
 
+  /* Match vect_permute_store_chain: RESULT_CHAIN must have LENGTH live
+     elements before it is indexed below.  This also preserves DR_CHAIN for
+     the degenerate one-element case.  */
+  result_chain->quick_grow (length);
+  memcpy (result_chain->address (), dr_chain.address (),
+	  length * sizeof (tree));
+
   /* Only power of 2 is supported.  */
   gcc_assert (pow2p_hwi (length));
 

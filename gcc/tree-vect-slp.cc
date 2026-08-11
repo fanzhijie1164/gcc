@@ -1130,6 +1130,15 @@ vect_build_slp_tree_1 (vec_info *vinfo, unsigned char *swap,
   gcc_assert (vectype);
   *node_vectype = vectype;
 
+  /* The transpose implementation predates per-node vector types and its
+     grouped-access checks still use STMT_VINFO_VECTYPE.  Preserve that
+     information for a transposed BB, as in the original implementation.  */
+  bb_vec_info bb_vinfo = dyn_cast <bb_vec_info> (vinfo);
+  if (bb_vinfo && bb_vinfo->transposed)
+    for (stmt_vec_info stmt_info : stmts)
+      if (stmt_info && !STMT_VINFO_VECTYPE (stmt_info))
+	STMT_VINFO_VECTYPE (stmt_info) = vectype;
+
   /* For every stmt in NODE find its def stmt/s.  */
   stmt_vec_info stmt_info;
   FOR_EACH_VEC_ELT (stmts, i, stmt_info)
@@ -4109,8 +4118,10 @@ vect_build_slp_instance (vec_info *vinfo,
 
       /* For basic block SLP, try to break the group up into multiples of
 	 a vector size.  */
-      if (is_a <bb_vec_info> (vinfo)
-	  && (i > 1 && i < group_size))
+      bb_vec_info bb_vinfo = dyn_cast <bb_vec_info> (vinfo);
+      if (bb_vinfo
+	  && (i > 1 && i < group_size)
+	  && !bb_vinfo->transposed)
 	{
 	  /* Free the allocated memory.  */
 	  scalar_stmts.release ();
@@ -10596,6 +10607,7 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
     {
       bool vectorized = false;
       bool fatal = false;
+      bb_vec_info discarded_bbvinfo = NULL;
       bb_vinfo = new _bb_vec_info (bbs, &shared);
 
       bool first_time_p = shared.datarefs.is_empty ();
@@ -10613,6 +10625,37 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
 
       bool analyzed
 	= vect_slp_analyze_bb_1 (bb_vinfo, n_stmts, fatal, dataref_groups);
+
+      bool force_clear = false;
+      auto_vec<slp_instance> profitable_subgraphs;
+      if (analyzed)
+	for (slp_instance instance : BB_VINFO_SLP_INSTANCES (bb_vinfo))
+	  {
+	    if (instance->subgraph_entries.is_empty ())
+	      continue;
+
+	    dump_user_location_t saved_vect_location = vect_location;
+	    vect_location = instance->location ();
+	    if (!unlimited_cost_model (NULL)
+		&& !vect_bb_vectorization_profitable_p
+		     (bb_vinfo, instance->subgraph_entries, orig_loop))
+	      {
+		if (dump_enabled_p ())
+		  dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+				   "not vectorized: vectorization is not "
+				   "profitable.\n");
+		vect_location = saved_vect_location;
+		continue;
+	      }
+
+	    vect_location = saved_vect_location;
+	    if (!dbg_cnt (vect_slp))
+	      {
+		force_clear = true;
+		continue;
+	      }
+	    profitable_subgraphs.safe_push (instance);
+	  }
 
       if (may_new_transpose_bbvinfo (bb_vinfo, analyzed, orig_loop))
 	{
@@ -10634,18 +10677,61 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
 	  bool analyzed_trans
 	    = vect_slp_analyze_bb_1 (bb_vinfo_trans, n_stmts, fatal_trans,
 				     dataref_groups);
+	  bool force_clear_trans = false;
+	  auto_vec<slp_instance> profitable_subgraphs_trans;
+	  if (analyzed_trans)
+	    for (slp_instance instance
+		 : BB_VINFO_SLP_INSTANCES (bb_vinfo_trans))
+	      {
+		if (instance->subgraph_entries.is_empty ())
+		  continue;
+
+		dump_user_location_t saved_vect_location = vect_location;
+		vect_location = instance->location ();
+		if (!unlimited_cost_model (NULL)
+		    && !vect_bb_vectorization_profitable_p
+			 (bb_vinfo_trans, instance->subgraph_entries,
+			  orig_loop))
+		  {
+		    if (dump_enabled_p ())
+		      dump_printf_loc
+			(MSG_MISSED_OPTIMIZATION, vect_location,
+			 "not vectorized: transpose vectorization is not "
+			 "profitable.\n");
+		    analyzed_trans = false;
+		    vect_location = saved_vect_location;
+		    break;
+		  }
+
+		vect_location = saved_vect_location;
+		if (!dbg_cnt (vect_slp))
+		  {
+		    force_clear_trans = true;
+		    continue;
+		  }
+		profitable_subgraphs_trans.safe_push (instance);
+	      }
 	  if (may_choose_transpose_bbvinfo (bb_vinfo_trans, analyzed_trans,
 					       bb_vinfo, analyzed, orig_loop))
 	    {
-	      delete bb_vinfo;
+	      /* Both candidates describe the same GIMPLE statements.  Keep the
+		 rejected one alive until scheduling no longer needs their UIDs.  */
+	      discarded_bbvinfo = bb_vinfo;
 	      bb_vinfo = bb_vinfo_trans;
 	      bb_vinfo_trans = NULL;
 	      analyzed = analyzed_trans;
 	      fatal = fatal_trans;
+	      force_clear = force_clear_trans;
+	      profitable_subgraphs.truncate (0);
+	      profitable_subgraphs.safe_splice (profitable_subgraphs_trans);
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "Basic block part vectorized using transposed "
+				 "version.\n");
 	    }
 	  else
 	    {
-	      delete bb_vinfo_trans;
+	      discarded_bbvinfo = bb_vinfo_trans;
 	      bb_vinfo_trans = NULL;
 	    }
 	}
@@ -10661,37 +10747,6 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
 	    }
 
 	  bb_vinfo->shared->check_datarefs ();
-
-	  bool force_clear = false;
-	  auto_vec<slp_instance> profitable_subgraphs;
-	  for (slp_instance instance : BB_VINFO_SLP_INSTANCES (bb_vinfo))
-	    {
-	      if (instance->subgraph_entries.is_empty ())
-		continue;
-
-	      dump_user_location_t saved_vect_location = vect_location;
-	      vect_location = instance->location ();
-	      if (!unlimited_cost_model (NULL)
-		  && !vect_bb_vectorization_profitable_p
-			(bb_vinfo, instance->subgraph_entries, orig_loop))
-		{
-		  if (dump_enabled_p ())
-		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
-				     "not vectorized: vectorization is not "
-				     "profitable.\n");
-		  vect_location = saved_vect_location;
-		  continue;
-		}
-
-	      vect_location = saved_vect_location;
-	      if (!dbg_cnt (vect_slp))
-		{
-		  force_clear = true;
-		  continue;
-		}
-
-	      profitable_subgraphs.safe_push (instance);
-	    }
 
 	  /* When we're vectorizing an if-converted loop body make sure
 	     we vectorized all if-converted code.  */
@@ -10802,6 +10857,7 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
 	  }
 
       delete bb_vinfo;
+      delete discarded_bbvinfo;
 
       if (mode_i < vector_modes.length ()
 	  && VECTOR_MODE_P (autodetected_vector_mode)
@@ -12236,14 +12292,24 @@ vect_schedule_slp_node (vec_info *vinfo,
   gcc_assert (SLP_TREE_NUMBER_OF_VEC_STMTS (node) != 0);
   SLP_TREE_VEC_DEFS (node).create (SLP_TREE_NUMBER_OF_VEC_STMTS (node));
 
-  if (SLP_TREE_CODE (node) != VEC_PERM_EXPR
+  if (is_a <bb_vec_info> (vinfo)
+      && as_a <bb_vec_info> (vinfo)->transposed)
+    {
+      stmt_vec_info last_stmt_info
+	= vect_find_last_scalar_stmt_in_slp (SLP_INSTANCE_TREE (instance));
+      si = gsi_for_stmt (last_stmt_info->stmt);
+    }
+  else if (SLP_TREE_CODE (node) != VEC_PERM_EXPR
       && STMT_VINFO_DATA_REF (stmt_info))
     {
       /* Vectorized loads go before the first scalar load to make it
 	 ready early, vectorized stores go before the last scalar
 	 stmt which is where all uses are ready.  */
       stmt_vec_info last_stmt_info = NULL;
-      if (DR_IS_READ (STMT_VINFO_DATA_REF (stmt_info)))
+      if (DR_GROUP_FIRST_ELEMENT (stmt_info)
+	  && DR_GROUP_SLP_TRANSPOSE (DR_GROUP_FIRST_ELEMENT (stmt_info)))
+	last_stmt_info = vect_find_last_scalar_stmt_in_slp (node);
+      else if (DR_IS_READ (STMT_VINFO_DATA_REF (stmt_info)))
 	last_stmt_info = vect_find_first_scalar_stmt_in_slp (node);
       else /* DR_IS_WRITE */
 	last_stmt_info = vect_find_last_scalar_stmt_in_slp (node);

@@ -2545,7 +2545,7 @@ record_stmt_cost (stmt_vector_for_cost *body_cost_vec, int count,
 
 extern void vect_finish_replace_stmt (vec_info *, stmt_vec_info, gimple *);
 extern void vect_finish_stmt_generation (vec_info *, stmt_vec_info, gimple *,
-					 gimple_stmt_iterator *,bool transpose=false);
+					 gimple_stmt_iterator *);
 extern opt_result vect_mark_stmts_to_be_vectorized (loop_vec_info, bool *);
 extern tree vect_get_store_rhs (stmt_vec_info);
 void vect_get_vec_defs_for_operand (vec_info *vinfo, stmt_vec_info, unsigned,
@@ -2561,7 +2561,7 @@ void vect_get_vec_defs (vec_info *, stmt_vec_info, slp_tree, unsigned,
 			tree = NULL, tree = NULL, vec<tree> * = NULL,
 			tree = NULL, tree = NULL, vec<tree> * = NULL);
 extern tree vect_init_vector (vec_info *, stmt_vec_info, tree, tree,
-			      gimple_stmt_iterator *, bool transpose=false);
+			      gimple_stmt_iterator *);
 extern tree vect_get_slp_vect_def (slp_tree, unsigned);
 extern bool vect_transform_stmt (vec_info *, stmt_vec_info,
 				 gimple_stmt_iterator *,
