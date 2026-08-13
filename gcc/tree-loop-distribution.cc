@@ -3223,8 +3223,11 @@ bool
 loop_distribution::check_loop_vectorizable (loop_p loop)
 {
   vec_info_shared shared;
-  vect_analyze_loop (loop, NULL, &shared, true);
-  loop_vec_info vinfo = loop_vec_info_for_loop (loop);
+  opt_loop_vec_info analyzed_vinfo
+    = vect_analyze_loop (loop, NULL, &shared, true);
+  loop_vec_info vinfo
+    = analyzed_vinfo ? (loop_vec_info) analyzed_vinfo
+      : loop_vec_info_for_loop (loop);
   reset_gimple_uid (loop);
   if (vinfo == NULL)
     {
