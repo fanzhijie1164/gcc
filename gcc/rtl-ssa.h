@@ -49,6 +49,7 @@
 #include "obstack-utils.h"
 #include "mux-utils.h"
 #include "rtlanal.h"
+#include "cfgbuild.h"
 
 // Provides the global crtl->ssa.
 #include "memmodel.h"
@@ -61,6 +62,7 @@
 #include "rtl-ssa/blocks.h"
 #include "rtl-ssa/changes.h"
 #include "rtl-ssa/functions.h"
+#include "rtl-ssa/predicates.h"
 #include "rtl-ssa/is-a.inl"
 #include "rtl-ssa/access-utils.h"
 #include "rtl-ssa/insn-utils.h"

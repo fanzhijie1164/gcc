@@ -1535,6 +1535,7 @@ OBJS = \
 	ipa-utils.o \
 	ipa.o \
 	ira.o \
+	pair-fusion.o \
 	ira-build.o \
 	ira-costs.o \
 	ira-conflicts.o \
@@ -1543,6 +1544,7 @@ OBJS = \
 	ira-lives.o \
 	jump.o \
 	langhooks.o \
+	late-combine.o \
 	lcm.o \
 	lists.o \
 	loop-doloop.o \
@@ -1624,6 +1626,7 @@ OBJS = \
 	rtl-ssa/changes.o \
 	rtl-ssa/functions.o \
 	rtl-ssa/insns.o \
+	rtl-ssa/movement.o \
 	rtl-tests.o \
 	rtl.o \
 	rtlhash.o \

@@ -1,5 +1,5 @@
-// Instruction-related utilities for RTL SSA                        -*- C++ -*-
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// RTL SSA routines for moving instructions
+// Copyright (C) 2023-2025 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -17,22 +17,25 @@
 // along with GCC; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-namespace rtl_ssa {
+#define INCLUDE_ALGORITHM
+#define INCLUDE_FUNCTIONAL
+#define INCLUDE_ARRAY
+#include "config.h"
+#include "system.h"
+#include "coretypes.h"
+#include "backend.h"
+#include "rtl.h"
+#include "df.h"
+#include "rtl-ssa.h"
+#include "rtl-ssa/internals.h"
+#include "rtl-ssa/internals.inl"
 
-// Return whichever of INSN1 and INSN2 occurs earlier in the function's
-// reverse postorder.
-inline insn_info *
-earlier_insn (insn_info *insn1, insn_info *insn2)
+using namespace rtl_ssa;
+
+// See the comment above the declaration.
+bool
+rtl_ssa::can_move_insn_p (insn_info *insn)
 {
-  return *insn1 < *insn2 ? insn1 : insn2;
-}
-
-// Return whichever of INSN1 and INSN2 occurs later in the function's
-// reverse postorder.
-inline insn_info *
-later_insn (insn_info *insn1, insn_info *insn2)
-{
-  return *insn1 < *insn2 ? insn2 : insn1;
-}
-
+  return (!control_flow_insn_p (insn->rtl ())
+	  && !may_trap_p (PATTERN (insn->rtl ())));
 }

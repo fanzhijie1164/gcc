@@ -1508,7 +1508,9 @@ static const struct tune_params generic_tunings =
      Neoverse V1.  It does not have a noticeable effect on A64FX and should
      have at most a very minor effect on SVE2 cores.  */
   (AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params cortexa35_tunings =
@@ -1542,7 +1544,9 @@ static const struct tune_params cortexa35_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params cortexa53_tunings =
@@ -1576,7 +1580,9 @@ static const struct tune_params cortexa53_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params cortexa57_tunings =
@@ -1610,7 +1616,9 @@ static const struct tune_params cortexa57_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_RENAME_FMA_REGS),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params cortexa72_tunings =
@@ -1644,7 +1652,9 @@ static const struct tune_params cortexa72_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params cortexa73_tunings =
@@ -1678,7 +1688,9 @@ static const struct tune_params cortexa73_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 
@@ -1713,7 +1725,9 @@ static const struct tune_params exynosm1_tunings =
   48,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK, /* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE), /* tune_flags.  */
-  &exynosm1_prefetch_tune
+  &exynosm1_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params thunderxt88_tunings =
@@ -1746,7 +1760,9 @@ static const struct tune_params thunderxt88_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_OFF,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW),	/* tune_flags.  */
-  &thunderxt88_prefetch_tune
+  &thunderxt88_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALIGNED,  /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALIGNED   /* stp_policy_model.  */
 };
 
 static const struct tune_params thunderx_tunings =
@@ -1780,7 +1796,9 @@ static const struct tune_params thunderx_tunings =
   tune_params::AUTOPREFETCHER_OFF,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW
    | AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND),	/* tune_flags.  */
-  &thunderx_prefetch_tune
+  &thunderx_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALIGNED,  /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALIGNED   /* stp_policy_model.  */
 };
 
 static const struct tune_params tsv110_tunings =
@@ -1814,7 +1832,9 @@ static const struct tune_params tsv110_tunings =
   0,    /* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,     /* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),     /* tune_flags.  */
-  &tsv110_prefetch_tune
+  &tsv110_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params xgene1_tunings =
@@ -1847,7 +1867,9 @@ static const struct tune_params xgene1_tunings =
   17,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_OFF,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS),	/* tune_flags.  */
-  &xgene1_prefetch_tune
+  &xgene1_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params emag_tunings =
@@ -1880,7 +1902,9 @@ static const struct tune_params emag_tunings =
   17,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_OFF,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS),	/* tune_flags.  */
-  &xgene1_prefetch_tune
+  &xgene1_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params qdf24xx_tunings =
@@ -1914,7 +1938,9 @@ static const struct tune_params qdf24xx_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   AARCH64_EXTRA_TUNE_RENAME_LOAD_REGS, /* tune_flags.  */
-  &qdf24xx_prefetch_tune
+  &qdf24xx_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 /* Tuning structure for the Qualcomm Saphira core.  Default to falkor values
@@ -1950,7 +1976,9 @@ static const struct tune_params saphira_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),		/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params thunderx2t99_tunings =
@@ -1984,7 +2012,9 @@ static const struct tune_params thunderx2t99_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &thunderx2t99_prefetch_tune
+  &thunderx2t99_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params thunderx3t110_tunings =
@@ -2018,7 +2048,9 @@ static const struct tune_params thunderx3t110_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &thunderx3t110_prefetch_tune
+  &thunderx3t110_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params neoversen1_tunings =
@@ -2051,7 +2083,9 @@ static const struct tune_params neoversen1_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params ampere1_tunings =
@@ -2088,7 +2122,9 @@ static const struct tune_params ampere1_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NO_LDP_COMBINE),	/* tune_flags.  */
-  &ampere1_prefetch_tune
+  &ampere1_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALIGNED,  /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALIGNED   /* stp_policy_model.  */
 };
 
 static const struct tune_params ampere1a_tunings =
@@ -2126,7 +2162,9 @@ static const struct tune_params ampere1a_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NO_LDP_COMBINE),	/* tune_flags.  */
-  &ampere1_prefetch_tune
+  &ampere1_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALIGNED,  /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALIGNED   /* stp_policy_model.  */
 };
 
 static const struct tune_params ftc66x_tunings =
@@ -2164,7 +2202,9 @@ static const struct tune_params ftc66x_tunings =
   0,    /* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,     /* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),  /* tune_flags.  */
-  &ftc66x_prefetch_tune
+  &ftc66x_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params ftc86x_tunings =
@@ -2198,7 +2238,9 @@ static const struct tune_params ftc86x_tunings =
   0,    /* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,     /* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),     /* tune_flags.  */
-  &ftc86x_prefetch_tune
+  &ftc86x_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const advsimd_vec_cost neoversev1_advsimd_vector_cost =
@@ -2379,7 +2421,9 @@ static const struct tune_params neoversev1_tunings =
    | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
    | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT
    | AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const sve_vec_cost neoverse512tvb_sve_vector_cost =
@@ -2516,7 +2560,9 @@ static const struct tune_params neoverse512tvb_tunings =
   (AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS
    | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
    | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const advsimd_vec_cost neoversen2_advsimd_vector_cost =
@@ -2706,7 +2752,9 @@ static const struct tune_params neoversen2_tunings =
    | AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS
    | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
    | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const advsimd_vec_cost neoversev2_advsimd_vector_cost =
@@ -2896,7 +2944,9 @@ static const struct tune_params neoversev2_tunings =
    | AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS
    | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
    | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT),	/* tune_flags.  */
-  &generic_prefetch_tune
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 static const struct tune_params a64fx_tunings =
@@ -2929,7 +2979,9 @@ static const struct tune_params a64fx_tunings =
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
   (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
-  &a64fx_prefetch_tune
+  &a64fx_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
 /* Support for fine-grained override of the tuning structures.  */
@@ -9133,23 +9185,15 @@ static rtx
 aarch64_gen_storewb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
 			  HOST_WIDE_INT adjustment)
 {
-  switch (mode)
-    {
-    case E_DImode:
-      return gen_storewb_pairdi_di (base, base, reg, reg2,
-				    GEN_INT (-adjustment),
-				    GEN_INT (UNITS_PER_WORD - adjustment));
-    case E_DFmode:
-      return gen_storewb_pairdf_di (base, base, reg, reg2,
-				    GEN_INT (-adjustment),
-				    GEN_INT (UNITS_PER_WORD - adjustment));
-    case E_TFmode:
-      return gen_storewb_pairtf_di (base, base, reg, reg2,
-				    GEN_INT (-adjustment),
-				    GEN_INT (UNITS_PER_VREG - adjustment));
-    default:
-      gcc_unreachable ();
-    }
+  rtx new_base = plus_constant (Pmode, base, -adjustment);
+  rtx mem = gen_frame_mem (mode, new_base);
+  rtx mem2 = adjust_address_nv (mem, mode, GET_MODE_SIZE (mode));
+
+  return gen_rtx_PARALLEL (VOIDmode,
+			   gen_rtvec (3,
+				      gen_rtx_SET (base, new_base),
+				      gen_rtx_SET (mem, reg),
+				      gen_rtx_SET (mem2, reg2)));
 }
 
 /* Push registers numbered REGNO1 and REGNO2 to the stack, adjusting the
@@ -9181,20 +9225,15 @@ static rtx
 aarch64_gen_loadwb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
 			 HOST_WIDE_INT adjustment)
 {
-  switch (mode)
-    {
-    case E_DImode:
-      return gen_loadwb_pairdi_di (base, base, reg, reg2, GEN_INT (adjustment),
-				   GEN_INT (UNITS_PER_WORD));
-    case E_DFmode:
-      return gen_loadwb_pairdf_di (base, base, reg, reg2, GEN_INT (adjustment),
-				   GEN_INT (UNITS_PER_WORD));
-    case E_TFmode:
-      return gen_loadwb_pairtf_di (base, base, reg, reg2, GEN_INT (adjustment),
-				   GEN_INT (UNITS_PER_VREG));
-    default:
-      gcc_unreachable ();
-    }
+  rtx mem = gen_frame_mem (mode, base);
+  rtx mem2 = adjust_address_nv (mem, mode, GET_MODE_SIZE (mode));
+  rtx new_base = plus_constant (Pmode, base, adjustment);
+
+  return gen_rtx_PARALLEL (VOIDmode,
+			   gen_rtvec (3,
+				      gen_rtx_SET (base, new_base),
+				      gen_rtx_SET (reg, mem),
+				      gen_rtx_SET (reg2, mem2)));
 }
 
 /* Pop the two registers numbered REGNO1, REGNO2 from the stack, adjusting it
@@ -9225,59 +9264,85 @@ aarch64_pop_regs (unsigned regno1, unsigned regno2, HOST_WIDE_INT adjustment,
     }
 }
 
-/* Generate and return a store pair instruction of mode MODE to store
-   register REG1 to MEM1 and register REG2 to MEM2.  */
+/* Given an ldp/stp register operand mode MODE, return a suitable mode to use
+   for a mem rtx representing the entire pair.  */
 
-static rtx
-aarch64_gen_store_pair (machine_mode mode, rtx mem1, rtx reg1, rtx mem2,
-			rtx reg2)
+static machine_mode
+aarch64_pair_mode_for_mode (machine_mode mode)
 {
-  switch (mode)
-    {
-    case E_DImode:
-      return gen_store_pair_dw_didi (mem1, reg1, mem2, reg2);
-
-    case E_DFmode:
-      return gen_store_pair_dw_dfdf (mem1, reg1, mem2, reg2);
-
-    case E_TFmode:
-      return gen_store_pair_dw_tftf (mem1, reg1, mem2, reg2);
-
-    case E_V4SImode:
-      return gen_vec_store_pairv4siv4si (mem1, reg1, mem2, reg2);
-
-    case E_V16QImode:
-      return gen_vec_store_pairv16qiv16qi (mem1, reg1, mem2, reg2);
-
-    default:
-      gcc_unreachable ();
-    }
+  if (known_eq (GET_MODE_SIZE (mode), 4))
+    return V2x4QImode;
+  else if (known_eq (GET_MODE_SIZE (mode), 8))
+    return V2x8QImode;
+  else if (known_eq (GET_MODE_SIZE (mode), 16))
+    return V2x16QImode;
+  else
+    gcc_unreachable ();
 }
 
-/* Generate and regurn a load pair isntruction of mode MODE to load register
-   REG1 from MEM1 and register REG2 from MEM2.  */
+/* Given a base mem MEM with mode and address suitable for a single ldp/stp
+   operand, return an rtx like MEM which instead represents the entire pair.  */
 
 static rtx
-aarch64_gen_load_pair (machine_mode mode, rtx reg1, rtx mem1, rtx reg2,
-		       rtx mem2)
+aarch64_pair_mem_from_base (rtx mem)
 {
-  switch (mode)
-    {
-    case E_DImode:
-      return gen_load_pair_dw_didi (reg1, mem1, reg2, mem2);
+  auto pair_mode = aarch64_pair_mode_for_mode (GET_MODE (mem));
+  mem = adjust_bitfield_address_nv (mem, pair_mode, 0);
+  gcc_assert (aarch64_mem_pair_lanes_operand (mem, pair_mode));
+  return mem;
+}
 
-    case E_DFmode:
-      return gen_load_pair_dw_dfdf (reg1, mem1, reg2, mem2);
+/* Generate and return a store pair instruction to store REG1 and REG2
+   into memory starting at BASE_MEM.  All three rtxes should have modes of the
+   same size.  */
 
-    case E_TFmode:
-      return gen_load_pair_dw_tftf (reg1, mem1, reg2, mem2);
+rtx
+aarch64_gen_store_pair (rtx base_mem, rtx reg1, rtx reg2)
+{
+  rtx pair_mem = aarch64_pair_mem_from_base (base_mem);
 
-    case E_V4SImode:
-      return gen_load_pairv4siv4si (reg1, mem1, reg2, mem2);
+  return gen_rtx_SET (pair_mem,
+		      gen_rtx_UNSPEC (GET_MODE (pair_mem),
+				      gen_rtvec (2, reg1, reg2),
+				      UNSPEC_STP));
+}
 
-    default:
-      gcc_unreachable ();
-    }
+/* Generate and return a load pair instruction to load a pair of
+   registers starting at BASE_MEM into REG1 and REG2.  If CODE is
+   UNKNOWN, all three rtxes should have modes of the same size.
+   Otherwise, CODE is {SIGN,ZERO}_EXTEND, base_mem should be in SImode,
+   and REG{1,2} should be in DImode.  */
+
+rtx
+aarch64_gen_load_pair (rtx reg1, rtx reg2, rtx base_mem, enum rtx_code code)
+{
+  rtx pair_mem = aarch64_pair_mem_from_base (base_mem);
+
+  const bool any_extend_p = (code == ZERO_EXTEND || code == SIGN_EXTEND);
+  if (any_extend_p)
+    gcc_checking_assert (GET_MODE (base_mem) == SImode
+			 && GET_MODE (reg1) == DImode
+			 && GET_MODE (reg2) == DImode);
+  else
+    gcc_assert (code == UNKNOWN);
+
+  rtx unspecs[2] = {
+    gen_rtx_UNSPEC (any_extend_p ? SImode : GET_MODE (reg1),
+		    gen_rtvec (1, pair_mem),
+		    UNSPEC_LDP_FST),
+    gen_rtx_UNSPEC (any_extend_p ? SImode : GET_MODE (reg2),
+		    gen_rtvec (1, copy_rtx (pair_mem)),
+		    UNSPEC_LDP_SND)
+  };
+
+  if (any_extend_p)
+    for (int i = 0; i < 2; i++)
+      unspecs[i] = gen_rtx_fmt_e (code, DImode, unspecs[i]);
+
+  return gen_rtx_PARALLEL (VOIDmode,
+			   gen_rtvec (2,
+				      gen_rtx_SET (reg1, unspecs[0]),
+				      gen_rtx_SET (reg2, unspecs[1])));
 }
 
 /* Return TRUE if return address signing should be enabled for the current
@@ -9495,25 +9560,28 @@ aarch64_save_callee_saves (poly_int64 start_offset,
 		       - cfun->machine->frame.reg_offset[regno]))
 	{
 	  rtx reg2 = gen_rtx_REG (mode, regno2);
-	  rtx mem2;
 
 	  offset += GET_MODE_SIZE (mode);
-	  mem2 = gen_frame_mem (mode, plus_constant (Pmode, base_rtx, offset));
-	  insn = emit_insn (aarch64_gen_store_pair (mode, mem, reg, mem2,
-						    reg2));
+	  insn = emit_insn (aarch64_gen_store_pair (mem, reg, reg2));
 
-	  /* The first part of a frame-related parallel insn is
-	     always assumed to be relevant to the frame
-	     calculations; subsequent parts, are only
-	     frame-related if explicitly marked.  */
+	  rtx cfi_mem = gen_frame_mem (mode, plus_constant (Pmode,
+							 stack_pointer_rtx,
+							 sp_offset));
+	  rtx cfi_set = gen_rtx_SET (cfi_mem, reg);
+	  rtx cfi_mem2 = gen_frame_mem
+	    (mode, plus_constant (Pmode, stack_pointer_rtx,
+				 sp_offset + GET_MODE_SIZE (mode)));
+	  rtx cfi_set2 = gen_rtx_SET (cfi_mem2, reg2);
+
 	  if (aarch64_emit_cfi_for_reg_p (regno2))
-	    {
-	      if (need_cfa_note_p)
-		aarch64_add_cfa_expression (insn, reg2, stack_pointer_rtx,
-					    sp_offset + GET_MODE_SIZE (mode));
-	      else
-		RTX_FRAME_RELATED_P (XVECEXP (PATTERN (insn), 0, 1)) = 1;
-	    }
+	    RTX_FRAME_RELATED_P (cfi_set2) = 1;
+
+	  /* Add a REG_FRAME_RELATED_EXPR note since the unspec
+	     representation of stp cannot be understood directly by
+	     dwarf2cfi.  */
+	  rtx par = gen_rtx_PARALLEL (VOIDmode,
+				      gen_rtvec (2, cfi_set, cfi_set2));
+	  add_reg_note (insn, REG_FRAME_RELATED_EXPR, par);
 
 	  regno = regno2;
 	}
@@ -9579,11 +9647,9 @@ aarch64_restore_callee_saves (poly_int64 start_offset, unsigned start,
 		       - cfun->machine->frame.reg_offset[regno]))
 	{
 	  rtx reg2 = gen_rtx_REG (mode, regno2);
-	  rtx mem2;
 
 	  offset += GET_MODE_SIZE (mode);
-	  mem2 = gen_frame_mem (mode, plus_constant (Pmode, base_rtx, offset));
-	  emit_insn (aarch64_gen_load_pair (mode, reg, mem, reg2, mem2));
+	  emit_insn (aarch64_gen_load_pair (reg, reg2, mem));
 
 	  *cfi_ops = alloc_reg_note (REG_CFA_RESTORE, reg2, *cfi_ops);
 	  regno = regno2;
@@ -9919,9 +9985,9 @@ aarch64_process_components (sbitmap components, bool prologue_p)
 			     : gen_rtx_SET (reg2, mem2);
 
       if (prologue_p)
-	insn = emit_insn (aarch64_gen_store_pair (mode, mem, reg, mem2, reg2));
+	insn = emit_insn (aarch64_gen_store_pair (mem, reg, reg2));
       else
-	insn = emit_insn (aarch64_gen_load_pair (mode, reg, mem, reg2, mem2));
+	insn = emit_insn (aarch64_gen_load_pair (reg, reg2, mem));
 
       if (frame_related_p || frame_related2_p)
 	{
@@ -11167,12 +11233,18 @@ aarch64_classify_address (struct aarch64_address_info *info,
      mode of the corresponding addressing mode is half of that.  */
   if (type == ADDR_QUERY_LDP_STP_N)
     {
-      if (known_eq (GET_MODE_SIZE (mode), 16))
+      if (known_eq (GET_MODE_SIZE (mode), 32))
+	mode = V16QImode;
+      else if (known_eq (GET_MODE_SIZE (mode), 16))
 	mode = DFmode;
       else if (known_eq (GET_MODE_SIZE (mode), 8))
 	mode = SFmode;
       else
 	return false;
+
+      /* This isn't really an Advanced SIMD struct mode, but a mode
+	 used to represent the complete mem in a load/store pair.  */
+      advsimd_struct_p = false;
     }
 
   bool allow_reg_index_p = (!load_store_pair_p
@@ -11680,6 +11752,15 @@ aarch64_float_const_zero_rtx_p (rtx x)
   if (REAL_VALUE_MINUS_ZERO (*CONST_DOUBLE_REAL_VALUE (x)))
     return !HONOR_SIGNED_ZEROS (GET_MODE (x));
   return real_equal (CONST_DOUBLE_REAL_VALUE (x), &dconst0);
+}
+
+/* Return true if X is any kind of constant zero rtx.  */
+
+bool
+aarch64_const_zero_rtx_p (rtx x)
+{
+  return (x == CONST0_RTX (GET_MODE (x))
+	  || (CONST_DOUBLE_P (x) && aarch64_float_const_zero_rtx_p (x)));
 }
 
 /* Return TRUE if rtx X is immediate constant that fits in a single
@@ -12513,8 +12594,7 @@ aarch64_print_operand (FILE *f, rtx x, int code)
 
     case 'w':
     case 'x':
-      if (x == const0_rtx
-	  || (CONST_DOUBLE_P (x) && aarch64_float_const_zero_rtx_p (x)))
+      if (aarch64_const_zero_rtx_p (x))
 	{
 	  asm_fprintf (f, "%czr", code);
 	  break;
@@ -12741,9 +12821,10 @@ aarch64_print_operand (FILE *f, rtx x, int code)
 	machine_mode mode = GET_MODE (x);
 
 	if (!MEM_P (x)
-	    || (code == 'y'
-		&& maybe_ne (GET_MODE_SIZE (mode), 8)
-		&& maybe_ne (GET_MODE_SIZE (mode), 16)))
+	  || (code == 'y'
+	      && maybe_ne (GET_MODE_SIZE (mode), 8)
+	      && maybe_ne (GET_MODE_SIZE (mode), 16)
+	      && maybe_ne (GET_MODE_SIZE (mode), 32)))
 	  {
 	    output_operand_lossage ("invalid operand for '%%%c'", code);
 	    return;
@@ -18464,6 +18545,12 @@ aarch64_override_options_internal (struct gcc_options *opts)
   if (opts->x_aarch64_override_tune_string)
     aarch64_parse_override_string (opts->x_aarch64_override_tune_string,
 				   &aarch64_tune_params);
+
+  if (opts->x_aarch64_ldp_policy_param)
+    aarch64_tune_params.ldp_policy_model = opts->x_aarch64_ldp_policy_param;
+
+  if (opts->x_aarch64_stp_policy_param)
+    aarch64_tune_params.stp_policy_model = opts->x_aarch64_stp_policy_param;
 
   /* This target defaults to strict volatile bitfields.  */
   if (opts->x_flag_strict_volatile_bitfields < 0 && abi_version_at_least (2))
@@ -25558,10 +25645,8 @@ aarch64_copy_one_block_and_progress_pointers (rtx *src, rtx *dst,
       *src = adjust_address (*src, mode, 0);
       *dst = adjust_address (*dst, mode, 0);
       /* Emit the memcpy.  */
-      emit_insn (aarch64_gen_load_pair (mode, reg1, *src, reg2,
-					aarch64_progress_pointer (*src)));
-      emit_insn (aarch64_gen_store_pair (mode, *dst, reg1,
-					 aarch64_progress_pointer (*dst), reg2));
+      emit_insn (aarch64_gen_load_pair (reg1, reg2, *src));
+      emit_insn (aarch64_gen_store_pair (*dst, reg1, reg2));
       /* Move the pointers forward.  */
       *src = aarch64_move_pointer (*src, 32);
       *dst = aarch64_move_pointer (*dst, 32);
@@ -25737,8 +25822,7 @@ aarch64_set_one_block_and_progress_pointer (rtx src, rtx *dst,
       /* "Cast" the *dst to the correct mode.  */
       *dst = adjust_address (*dst, mode, 0);
       /* Emit the memset.  */
-      emit_insn (aarch64_gen_store_pair (mode, *dst, src,
-					 aarch64_progress_pointer (*dst), src));
+      emit_insn (aarch64_gen_store_pair (*dst, src, src));
 
       /* Move the pointers forward.  */
       *dst = aarch64_move_pointer (*dst, 32);
@@ -26806,41 +26890,53 @@ aarch64_check_consecutive_mems (rtx *mem1, rtx *mem2, bool *reversed)
   return false;
 }
 
-/* Return true if MEM1 and MEM2 can be combined into a single access
-   of mode MODE, with the combined access having the same address as MEM1.  */
+/* Test if MODE is suitable for a single transfer register in an ldp or stp
+   instruction.  */
 
 bool
-aarch64_mergeable_load_pair_p (machine_mode mode, rtx mem1, rtx mem2)
+aarch64_ldpstp_operand_mode_p (machine_mode mode)
 {
-  if (STRICT_ALIGNMENT && MEM_ALIGN (mem1) < GET_MODE_ALIGNMENT (mode))
+  if (!targetm.hard_regno_mode_ok (V0_REGNUM, mode)
+      || hard_regno_nregs (V0_REGNUM, mode) > 1)
     return false;
-  return aarch64_check_consecutive_mems (&mem1, &mem2, nullptr);
+
+  const auto size = GET_MODE_SIZE (mode);
+  return known_eq (size, 4) || known_eq (size, 8) || known_eq (size, 16);
+}
+
+/* Return true if MEM agrees with the ldp-stp policy model.
+   Otherwise, false.  */
+
+bool
+aarch64_mem_ok_with_ldpstp_policy_model (rtx mem, bool load, machine_mode mode)
+{
+  auto policy = (load
+		 ? aarch64_tune_params.ldp_policy_model
+		 : aarch64_tune_params.stp_policy_model);
+
+  /* If we have AARCH64_LDP_STP_POLICY_NEVER, reject the load pair.  */
+  if (policy == AARCH64_LDP_STP_POLICY_NEVER)
+    return false;
+
+  /* If we have AARCH64_LDP_STP_POLICY_ALIGNED,
+     do not emit the load pair unless the alignment is checked to be
+     at least double the alignment of the type.  */
+  if (policy == AARCH64_LDP_STP_POLICY_ALIGNED
+      && !optimize_function_for_size_p (cfun)
+      && MEM_ALIGN (mem) < 2 * GET_MODE_ALIGNMENT (mode))
+    return false;
+
+  return true;
 }
 
 /* Given OPERANDS of consecutive load/store, check if we can merge
-   them into ldp/stp.  LOAD is true if they are load instructions.
-   MODE is the mode of memory operands.  */
+   them into ldp/stp.  LOAD is true if they are load instructions.  */
 
 bool
-aarch64_operands_ok_for_ldpstp (rtx *operands, bool load,
-				machine_mode mode)
+aarch64_operands_ok_for_ldpstp (rtx *operands, bool load)
 {
   enum reg_class rclass_1, rclass_2;
   rtx mem_1, mem_2, reg_1, reg_2;
-
-  /* Allow the tuning structure to disable LDP instruction formation
-     from combining instructions (e.g., in peephole2).
-     TODO: Implement fine-grained tuning control for LDP and STP:
-	   1. control policies for load and store separately;
-	   2. support the following policies:
-	      - default (use what is in the tuning structure)
-	      - always
-	      - never
-	      - aligned (only if the compiler can prove that the
-		load will be aligned to 2 * element_size)  */
-  if (load && (aarch64_tune_params.extra_tuning_flags
-	       & AARCH64_EXTRA_TUNE_NO_LDP_COMBINE))
-    return false;
 
   if (load)
     {
@@ -26866,15 +26962,6 @@ aarch64_operands_ok_for_ldpstp (rtx *operands, bool load,
   if (MEM_VOLATILE_P (mem_1) || MEM_VOLATILE_P (mem_2))
     return false;
 
-  /* If we have SImode and slow unaligned ldp,
-     check the alignment to be at least 8 byte. */
-  if (mode == SImode
-      && (aarch64_tune_params.extra_tuning_flags
-          & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
-      && !optimize_size
-      && MEM_ALIGN (mem_1) < 8 * BITS_PER_UNIT)
-    return false;
-
   /* Check if the addresses are in the form of [base+offset].  */
   bool reversed = false;
   if (!aarch64_check_consecutive_mems (&mem_1, &mem_2, &reversed))
@@ -26884,11 +26971,15 @@ aarch64_operands_ok_for_ldpstp (rtx *operands, bool load,
   gcc_assert (known_eq (GET_MODE_SIZE (GET_MODE (mem_1)),
 			GET_MODE_SIZE (GET_MODE (mem_2))));
 
-  /* One of the memory accesses must be a mempair operand.
-     If it is not the first one, they need to be swapped by the
-     peephole.  */
-  if (!aarch64_mem_pair_operand (mem_1, GET_MODE (mem_1))
-       && !aarch64_mem_pair_operand (mem_2, GET_MODE (mem_2)))
+  /* The lower memory access must be a mem-pair operand.  */
+  rtx lower_mem = reversed ? mem_2 : mem_1;
+  machine_mode lower_mem_mode = GET_MODE (lower_mem);
+  if (!aarch64_mem_pair_operand (lower_mem, lower_mem_mode))
+    return false;
+
+  /* Check if lower_mem is ok with the ldp-stp policy model.  */
+  if (!aarch64_mem_ok_with_ldpstp_policy_model (lower_mem, load,
+						lower_mem_mode))
     return false;
 
   if (REG_P (reg_1) && FP_REGNUM_P (REGNO (reg_1)))
@@ -26908,6 +26999,17 @@ aarch64_operands_ok_for_ldpstp (rtx *operands, bool load,
   return true;
 }
 
+/* Return true if MEM1 and MEM2 can be combined into a single access
+   of mode MODE, with the combined access having the same address as MEM1.  */
+
+bool
+aarch64_mergeable_load_pair_p (machine_mode mode, rtx mem1, rtx mem2)
+{
+  if (STRICT_ALIGNMENT && MEM_ALIGN (mem1) < GET_MODE_ALIGNMENT (mode))
+    return false;
+  return aarch64_check_consecutive_mems (&mem1, &mem2, nullptr);
+}
+
 /* Given OPERANDS of consecutive load/store that can be merged,
    swap them if they are not in ascending order.  */
 void
@@ -26925,6 +27027,29 @@ aarch64_swap_ldrstr_operands (rtx* operands, bool load)
 	 we do the same swap.  */
       std::swap (operands[0], operands[2]);
       std::swap (operands[1], operands[3]);
+    }
+}
+
+/* Helper function used for generation of load/store pair instructions, called
+   from peepholes in aarch64-ldpstp.md.  OPERANDS is an array of
+   operands as matched by the peepholes in that file.  LOAD_P is true if we're
+   generating a load pair, otherwise we're generating a store pair.  CODE is
+   either {ZERO,SIGN}_EXTEND for extending loads or UNKNOWN if we're generating a
+   standard load/store pair.  */
+
+void
+aarch64_finish_ldpstp_peephole (rtx *operands, bool load_p, enum rtx_code code)
+{
+  aarch64_swap_ldrstr_operands (operands, load_p);
+
+  if (load_p)
+    emit_insn (aarch64_gen_load_pair (operands[0], operands[2],
+				      operands[1], code));
+  else
+    {
+      gcc_assert (code == UNKNOWN);
+      emit_insn (aarch64_gen_store_pair (operands[0], operands[1],
+					 operands[3]));
     }
 }
 
@@ -27091,13 +27216,8 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
   if (offvals[0] % msize != offvals[2] % msize)
     return false;
 
-  /* If we have SImode and slow unaligned ldp,
-     check the alignment to be at least 8 byte. */
-  if (mode == SImode
-      && (aarch64_tune_params.extra_tuning_flags
-	  & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
-      && !optimize_size
-      && MEM_ALIGN (mem[0]) < 8 * BITS_PER_UNIT)
+   /* Check if mem[0] is ok with the ldp-stp policy model.  */
+  if (!aarch64_mem_ok_with_ldpstp_policy_model (mem[0], load, mode))
     return false;
 
   return true;
@@ -27114,10 +27234,10 @@ bool
 aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
 			     machine_mode mode, RTX_CODE code)
 {
-  rtx base, offset_1, offset_3, t1, t2;
-  rtx mem_1, mem_2, mem_3, mem_4;
+  rtx base, offset_1, offset_2;
+  rtx mem_1, mem_2;
   rtx temp_operands[8];
-  HOST_WIDE_INT off_val_1, off_val_3, base_off, new_off_1, new_off_3,
+  HOST_WIDE_INT off_val_1, off_val_2, base_off, new_off_1, new_off_2,
 		stp_off_upper_limit, stp_off_lower_limit, msize;
 
   /* We make changes on a copy as we may still bail out.  */
@@ -27140,23 +27260,19 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
   if (load)
     {
       mem_1 = copy_rtx (temp_operands[1]);
-      mem_2 = copy_rtx (temp_operands[3]);
-      mem_3 = copy_rtx (temp_operands[5]);
-      mem_4 = copy_rtx (temp_operands[7]);
+      mem_2 = copy_rtx (temp_operands[5]);
     }
   else
     {
       mem_1 = copy_rtx (temp_operands[0]);
-      mem_2 = copy_rtx (temp_operands[2]);
-      mem_3 = copy_rtx (temp_operands[4]);
-      mem_4 = copy_rtx (temp_operands[6]);
+      mem_2 = copy_rtx (temp_operands[4]);
       gcc_assert (code == UNKNOWN);
     }
 
   extract_base_offset_in_addr (mem_1, &base, &offset_1);
-  extract_base_offset_in_addr (mem_3, &base, &offset_3);
+  extract_base_offset_in_addr (mem_2, &base, &offset_2);
   gcc_assert (base != NULL_RTX && offset_1 != NULL_RTX
-	      && offset_3 != NULL_RTX);
+	      && offset_2 != NULL_RTX);
 
   /* Adjust offset so it can fit in LDP/STP instruction.  */
   msize = GET_MODE_SIZE (mode).to_constant();
@@ -27164,11 +27280,11 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
   stp_off_lower_limit = - msize * 0x40;
 
   off_val_1 = INTVAL (offset_1);
-  off_val_3 = INTVAL (offset_3);
+  off_val_2 = INTVAL (offset_2);
 
   /* The base offset is optimally half way between the two STP/LDP offsets.  */
   if (msize <= 4)
-    base_off = (off_val_1 + off_val_3) / 2;
+    base_off = (off_val_1 + off_val_2) / 2;
   else
     /* However, due to issues with negative LDP/STP offset generation for
        larger modes, for DF, DD, DI and vector modes. we must not use negative
@@ -27208,73 +27324,58 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
   new_off_1 = off_val_1 - base_off;
 
   /* Offset of the second STP/LDP.  */
-  new_off_3 = off_val_3 - base_off;
+  new_off_2 = off_val_2 - base_off;
 
   /* The offsets must be within the range of the LDP/STP instructions.  */
   if (new_off_1 > stp_off_upper_limit || new_off_1 < stp_off_lower_limit
-      || new_off_3 > stp_off_upper_limit || new_off_3 < stp_off_lower_limit)
+      || new_off_2 > stp_off_upper_limit || new_off_2 < stp_off_lower_limit)
     return false;
 
   replace_equiv_address_nv (mem_1, plus_constant (Pmode, operands[8],
 						  new_off_1), true);
   replace_equiv_address_nv (mem_2, plus_constant (Pmode, operands[8],
-						  new_off_1 + msize), true);
-  replace_equiv_address_nv (mem_3, plus_constant (Pmode, operands[8],
-						  new_off_3), true);
-  replace_equiv_address_nv (mem_4, plus_constant (Pmode, operands[8],
-						  new_off_3 + msize), true);
+						  new_off_2), true);
 
   if (!aarch64_mem_pair_operand (mem_1, mode)
-      || !aarch64_mem_pair_operand (mem_3, mode))
+      || !aarch64_mem_pair_operand (mem_2, mode))
     return false;
-
-  if (code == ZERO_EXTEND)
-    {
-      mem_1 = gen_rtx_ZERO_EXTEND (DImode, mem_1);
-      mem_2 = gen_rtx_ZERO_EXTEND (DImode, mem_2);
-      mem_3 = gen_rtx_ZERO_EXTEND (DImode, mem_3);
-      mem_4 = gen_rtx_ZERO_EXTEND (DImode, mem_4);
-    }
-  else if (code == SIGN_EXTEND)
-    {
-      mem_1 = gen_rtx_SIGN_EXTEND (DImode, mem_1);
-      mem_2 = gen_rtx_SIGN_EXTEND (DImode, mem_2);
-      mem_3 = gen_rtx_SIGN_EXTEND (DImode, mem_3);
-      mem_4 = gen_rtx_SIGN_EXTEND (DImode, mem_4);
-    }
 
   if (load)
     {
       operands[0] = temp_operands[0];
       operands[1] = mem_1;
       operands[2] = temp_operands[2];
-      operands[3] = mem_2;
       operands[4] = temp_operands[4];
-      operands[5] = mem_3;
+      operands[5] = mem_2;
       operands[6] = temp_operands[6];
-      operands[7] = mem_4;
     }
   else
     {
       operands[0] = mem_1;
       operands[1] = temp_operands[1];
-      operands[2] = mem_2;
       operands[3] = temp_operands[3];
-      operands[4] = mem_3;
+      operands[4] = mem_2;
       operands[5] = temp_operands[5];
-      operands[6] = mem_4;
       operands[7] = temp_operands[7];
     }
 
   /* Emit adjusting instruction.  */
   emit_insn (gen_rtx_SET (operands[8], plus_constant (DImode, base, base_off)));
   /* Emit ldp/stp instructions.  */
-  t1 = gen_rtx_SET (operands[0], operands[1]);
-  t2 = gen_rtx_SET (operands[2], operands[3]);
-  emit_insn (gen_rtx_PARALLEL (VOIDmode, gen_rtvec (2, t1, t2)));
-  t1 = gen_rtx_SET (operands[4], operands[5]);
-  t2 = gen_rtx_SET (operands[6], operands[7]);
-  emit_insn (gen_rtx_PARALLEL (VOIDmode, gen_rtvec (2, t1, t2)));
+  if (load)
+    {
+      emit_insn (aarch64_gen_load_pair (operands[0], operands[2],
+					operands[1], code));
+      emit_insn (aarch64_gen_load_pair (operands[4], operands[6],
+					operands[5], code));
+    }
+  else
+    {
+      emit_insn (aarch64_gen_store_pair (operands[0], operands[1],
+					 operands[3]));
+      emit_insn (aarch64_gen_store_pair (operands[4], operands[5],
+					 operands[7]));
+    }
   return true;
 }
 
