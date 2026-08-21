@@ -1262,27 +1262,26 @@ static const struct cpu_vector_cost ftc66x_vector_cost =
   nullptr, /* sve  */
   nullptr  /* issue_info  */
 };
-
 static const advsimd_vec_cost ftc86x_advsimd_vector_cost =
 {
-  2, /* int_stmt_cost  */
-  2, /* fp_stmt_cost  */
+  1, /* int_stmt_cost  */
+  1, /* fp_stmt_cost  */
   0, /* ld2_st2_permute_cost  */
   0, /* ld3_st3_permute_cost  */
   0, /* ld4_st4_permute_cost  */
   2, /* permute_cost  */
-  3, /* reduc_i8_cost  */
-  3, /* reduc_i16_cost  */
-  3, /* reduc_i32_cost  */
-  3, /* reduc_i64_cost  */
-  3, /* reduc_f16_cost  */
-  3, /* reduc_f32_cost  */
-  3, /* reduc_f64_cost  */
-  3, /* store_elt_extra_cost  */
-  3, /* vec_to_scalar_cost  */
-  2, /* scalar_to_vec_cost  */
-  5, /* align_load_cost  */
-  5, /* unalign_load_cost  */
+  2, /* reduc_i8_cost  */
+  2, /* reduc_i16_cost  */
+  2, /* reduc_i32_cost  */
+  2, /* reduc_i64_cost  */
+  2, /* reduc_f16_cost  */
+  2, /* reduc_f32_cost  */
+  2, /* reduc_f64_cost  */
+  2, /* store_elt_extra_cost  */
+  2, /* vec_to_scalar_cost  */
+  1, /* scalar_to_vec_cost  */
+  1, /* align_load_cost  */
+  1, /* unalign_load_cost  */
   1, /* unalign_store_cost  */
   1  /* store_cost  */
 };
@@ -1291,7 +1290,7 @@ static const struct cpu_vector_cost ftc86x_vector_cost =
 {
   1, /* scalar_int_stmt_cost  */
   1, /* scalar_fp_stmt_cost  */
-  4, /* scalar_load_cost  */
+  1, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
   1, /* cond_taken_branch_cost  */
   1, /* cond_not_taken_branch_cost  */
