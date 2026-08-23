@@ -728,9 +728,9 @@ enum target_cpus
   TARGET_CPU_generic
 };
 
-/* If there is no CPU defined at configure, use generic as default.  */
+/* If there is no CPU defined at configure, use the Armv8-A baseline model.  */
 #ifndef TARGET_CPU_DEFAULT
-# define TARGET_CPU_DEFAULT TARGET_CPU_generic
+# define TARGET_CPU_DEFAULT TARGET_CPU_generic_armv8_a
 #endif
 
 /* If inserting NOP before a mult-accumulate insn remember to adjust the

@@ -1512,6 +1512,46 @@ static const struct tune_params generic_tunings =
   AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
 };
 
+/* Baseline Armv8-A tuning model.  This is the GCC 15/16
+   generic_armv8_a model, expressed using the GCC 12 tune_params fields.  */
+static const struct tune_params generic_armv8_a_tunings =
+{
+  &cortexa76_extra_costs,
+  &generic_addrcost_table,
+  &generic_regmove_cost,
+  &generic_vector_cost,
+  &generic_branch_cost,
+  &generic_approx_modes,
+  SVE_NOT_IMPLEMENTED, /* sve_width  */
+  { 4, /* load_int.  */
+    2, /* store_int.  */
+    5, /* load_fp.  */
+    2, /* store_fp.  */
+    4, /* load_pred.  */
+    4 /* store_pred.  */
+  }, /* memmov_cost.  */
+  3, /* issue_rate  */
+  (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_CMP_BRANCH), /* fusible_ops  */
+  "32:16",	/* function_align.  */
+  "4",		/* jump_align.  */
+  "32:16",	/* loop_align.  */
+  2,	/* int_reassoc_width.  */
+  4,	/* fp_reassoc_width.  */
+  1,	/* fma_reassoc_width.  */
+  2,	/* vec_reassoc_width.  */
+  2,	/* min_div_recip_mul_sf.  */
+  2,	/* min_div_recip_mul_df.  */
+  0,	/* max_case_values.  */
+  tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
+  (AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND
+   | AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS
+   | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
+   | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT), /* tune_flags.  */
+  &generic_prefetch_tune,
+  AARCH64_LDP_STP_POLICY_ALWAYS,   /* ldp_policy_model.  */
+  AARCH64_LDP_STP_POLICY_ALWAYS    /* stp_policy_model.  */
+};
+
 static const struct tune_params cortexa35_tunings =
 {
   &cortexa53_extra_costs,
