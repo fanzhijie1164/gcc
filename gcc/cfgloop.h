@@ -223,6 +223,9 @@ public:
   /* True if we should try harder to vectorize this loop.  */
   unsigned force_vectorize : 1;
 
+  /* True if loop distribution found a profitable transpose SLP shape.  */
+  unsigned slp_transpose_candidate : 1;
+
   /* True if the loop is part of an oacc kernels region.  */
   unsigned in_oacc_kernels_region : 1;
 

@@ -10534,6 +10534,7 @@ may_new_transpose_bbvinfo (bb_vec_info bb_vinfo_ori, bool res_ori,
 			   loop_p orig_loop)
 {
   if (!flag_tree_slp_transpose_vectorize
+      || !flag_tree_slp_restricted_data_dependence_analyze
       || !BB_VINFO_BEFORE_SLP (bb_vinfo_ori))
     return false;
 

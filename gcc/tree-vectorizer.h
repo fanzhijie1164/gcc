@@ -2235,6 +2235,11 @@ loop_cost_model (loop_p loop)
 inline bool
 unlimited_cost_model (loop_p loop)
 {
+  if (loop
+      && loop->slp_transpose_candidate
+      && flag_tree_slp_transpose_vectorize
+      && flag_tree_slp_restricted_data_dependence_analyze)
+    return true;
   return loop_cost_model (loop) == VECT_COST_MODEL_UNLIMITED;
 }
 

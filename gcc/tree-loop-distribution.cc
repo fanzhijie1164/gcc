@@ -3219,6 +3219,8 @@ loop_distribution::reset_gimple_uid (loop_p loop)
   free (bbs);
 }
 
+static unsigned get_cut_points (struct graph *, bitmap, loop_vec_info);
+
 bool
 loop_distribution::check_loop_vectorizable (loop_p loop)
 {
@@ -3239,6 +3241,37 @@ loop_distribution::check_loop_vectorizable (loop_p loop)
     }
   if (vinfo->vectorizable)
     {
+      machine_mode preferred_mode
+	= targetm.vectorize.preferred_simd_mode
+	    (GET_MODE_INNER (vinfo->vector_mode));
+      unsigned int preferred_nunits;
+      if (flag_tree_slp_transpose_vectorize
+	  && flag_tree_slp_restricted_data_dependence_analyze
+	  && !loop->slp_transpose_candidate
+	  && loop->simdlen == 0
+	  && vinfo->grouped_loads.length () != 0
+	  && VECTOR_MODE_P (preferred_mode)
+	  && known_lt (GET_MODE_SIZE (vinfo->vector_mode),
+		       GET_MODE_SIZE (preferred_mode))
+	  && GET_MODE_NUNITS (preferred_mode).is_constant (&preferred_nunits)
+	  && preferred_nunits <= INT_MAX)
+	{
+	  struct graph *flow_only_rdg = build_rdg (loop, NULL);
+	  if (flow_only_rdg)
+	    {
+	      auto_bitmap cut_points;
+	      if (get_cut_points (flow_only_rdg, cut_points, vinfo) != 0)
+		{
+		  loop->slp_transpose_candidate = true;
+		  loop->simdlen = preferred_nunits;
+		  if (dump_file && (dump_flags & TDF_DETAILS))
+		    fprintf (dump_file,
+			     "Loop %d prefers VF %d for transpose SLP.\n",
+			     loop->num, loop->simdlen);
+		}
+	      free_rdg (flow_only_rdg, loop);
+	    }
+	}
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file, "Loop %d no temp array insertion: original loop"
 			    " can be vectorized without distribution.\n",
@@ -3272,7 +3305,9 @@ bool
 loop_distribution::may_insert_temp_arrays (loop_p loop, struct graph *&rdg,
 					   control_dependences *cd)
 {
-  if (!(flag_tree_slp_transpose_vectorize && flag_tree_loop_vectorize))
+  if (!(flag_tree_slp_transpose_vectorize
+	&& flag_tree_slp_restricted_data_dependence_analyze
+	&& flag_tree_loop_vectorize))
     return false;
 
   /* Only loops with two basic blocks HEADER and LATCH are supported.  HEADER
