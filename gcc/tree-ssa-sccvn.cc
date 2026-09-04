@@ -8079,14 +8079,15 @@ eliminate_with_rpo_vn (bitmap inserted_exprs)
   return walker.eliminate_cleanup ();
 }
 
-unsigned
-do_rpo_vn (function *fn, edge entry, bitmap exit_bbs,
-	   bool iterate, bool eliminate, vn_lookup_kind kind);
+static unsigned
+do_rpo_vn_1 (function *fn, edge entry, bitmap exit_bbs,
+	     bool iterate, bool eliminate, bool skip_entry_phis,
+	     vn_lookup_kind kind);
 
 void
 run_rpo_vn (vn_lookup_kind kind)
 {
-  do_rpo_vn (cfun, NULL, NULL, true, false, kind);
+  do_rpo_vn_1 (cfun, NULL, NULL, true, false, false, kind);
 
   /* ???  Prune requirement of these.  */
   constant_to_value_id = new hash_table<vn_constant_hasher> (23);
@@ -8833,11 +8834,13 @@ do_unwind (unwind_state *to, rpo_elim &avail)
 /* Do VN on a SEME region specified by ENTRY and EXIT_BBS in FN.
    If ITERATE is true then treat backedges optimistically as not
    executed and iterate.  If ELIMINATE is true then perform
-   elimination, otherwise leave that to the caller.  */
+   elimination, otherwise leave that to the caller.  If SKIP_ENTRY_PHIS
+   is true then force PHI nodes in ENTRY->dest to VARYING.  */
 
-unsigned
-do_rpo_vn (function *fn, edge entry, bitmap exit_bbs,
-	   bool iterate, bool eliminate, vn_lookup_kind kind)
+static unsigned
+do_rpo_vn_1 (function *fn, edge entry, bitmap exit_bbs,
+	     bool iterate, bool eliminate, bool skip_entry_phis,
+	     vn_lookup_kind kind)
 {
   unsigned todo = 0;
   default_vn_walk_kind = kind;
@@ -8878,10 +8881,10 @@ do_rpo_vn (function *fn, edge entry, bitmap exit_bbs,
     if (e != entry
 	&& !(e->flags & EDGE_DFS_BACK))
       break;
-  bool skip_entry_phis = e != NULL;
-  if (skip_entry_phis && dump_file && (dump_flags & TDF_DETAILS))
+  if (e != NULL && dump_file && (dump_flags & TDF_DETAILS))
     fprintf (dump_file, "Region does not contain all edges into "
 	     "the entry block, skipping its PHIs.\n");
+  skip_entry_phis |= e != NULL;
 
   int *bb_to_rpo = XNEWVEC (int, last_basic_block_for_fn (fn));
   for (int i = 0; i < n; ++i)
@@ -9262,15 +9265,21 @@ do_rpo_vn (function *fn, edge entry, bitmap exit_bbs,
   return todo;
 }
 
-/* Region-based entry for RPO VN.  Performs value-numbering and elimination
-   on the SEME region specified by ENTRY and EXIT_BBS.  If ENTRY is not
-   the only edge into the region at ENTRY->dest PHI nodes in ENTRY->dest
-   are not considered.  */
+/* Do VN on a SEME region specified by ENTRY and EXIT_BBS in FN.
+   If ITERATE is true then treat backedges optimistically as not
+   executed and iterate.  If ELIMINATE is true then perform
+   elimination, otherwise leave that to the caller.
+   If SKIP_ENTRY_PHIS is true then force PHI nodes in ENTRY->dest to VARYING.
+   KIND specifies the amount of work done for handling memory operations.  */
 
 unsigned
-do_rpo_vn (function *fn, edge entry, bitmap exit_bbs)
+do_rpo_vn (function *fn, edge entry, bitmap exit_bbs,
+	   bool iterate, bool eliminate, bool skip_entry_phis,
+	   vn_lookup_kind kind)
 {
-  unsigned todo = do_rpo_vn (fn, entry, exit_bbs, false, true, VN_WALKREWRITE);
+  auto_timevar tv (TV_TREE_RPO_VN);
+  unsigned todo = do_rpo_vn_1 (fn, entry, exit_bbs, iterate, eliminate,
+			       skip_entry_phis, kind);
   free_rpo_vn ();
   return todo;
 }
@@ -9344,7 +9353,8 @@ pass_fre::execute (function *fun)
       loop_optimizer_init (AVOID_CFG_MODIFICATIONS);
     }
 
-  todo = do_rpo_vn (fun, NULL, NULL, iterate_p, true, VN_WALKREWRITE);
+  todo = do_rpo_vn_1 (fun, NULL, NULL, iterate_p, true, false,
+		       VN_WALKREWRITE);
   free_rpo_vn ();
 
   if (iterate_p)

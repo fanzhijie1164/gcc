@@ -120,6 +120,25 @@ sreal::to_int () const
   return m_sig;
 }
 
+/* Return nearest integer value of *this.  */
+
+int64_t
+sreal::to_nearest_int () const
+{
+  int64_t sign = SREAL_SIGN (m_sig);
+
+  if (m_exp <= -SREAL_BITS)
+    return 0;
+  if (m_exp >= SREAL_PART_BITS)
+    return sign * INTTYPE_MAXIMUM (int64_t);
+  if (m_exp > 0)
+    return sign * (SREAL_ABS ((int64_t)m_sig) << m_exp);
+  if (m_exp < 0)
+    return sign * ((SREAL_ABS ((int64_t)m_sig) >> -m_exp)
+		   + ((SREAL_ABS (m_sig) >> (-m_exp - 1)) & 1));
+  return m_sig;
+}
+
 /* Return value of *this as double.
    This should be used for debug output only.  */
 

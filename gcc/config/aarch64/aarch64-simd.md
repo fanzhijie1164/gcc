@@ -671,7 +671,7 @@
 ;; ...
 ;;
 ;; and so the vectorizer provides r, in which the result has to be accumulated.
-(define_insn "<sur>dot_prod<vsi2qi><vczle><vczbe>"
+(define_insn "<sur>dot_prod<mode><vsi2qi><vczle><vczbe>"
   [(set (match_operand:VS 0 "register_operand" "=w")
 	(plus:VS
 	  (unspec:VS [(match_operand:<VSI2QI> 1 "register_operand" "w")
@@ -685,7 +685,7 @@
 
 ;; These instructions map to the __builtins for the Armv8.6-a I8MM usdot
 ;; (vector) Dot Product operation and the vectorized optab.
-(define_insn "usdot_prod<vsi2qi><vczle><vczbe>"
+(define_insn "usdot_prod<mode><vsi2qi><vczle><vczbe>"
   [(set (match_operand:VS 0 "register_operand" "=w")
 	(plus:VS
 	  (unspec:VS [(match_operand:<VSI2QI> 1 "register_operand" "w")
@@ -1035,6 +1035,17 @@
   }
 )
 
+(define_expand "vec_trunc_add_high<mode>"
+  [(set (match_operand:<VNARROWQ> 0 "register_operand")
+	(plus:VQN (match_operand:VQN 1 "register_operand")
+		  (match_operand:VQN 2 "register_operand")))]
+  "TARGET_SIMD"
+  {
+    emit_insn (gen_aarch64_addhn<mode> (operands[0], operands[1], operands[2]));
+    DONE;
+  }
+)
+
 (define_insn "aarch64_<su>abal<mode>"
   [(set (match_operand:<VWIDE> 0 "register_operand" "=w")
 	(plus:<VWIDE>
@@ -1160,7 +1171,8 @@
 	rtx ones = force_reg (V16QImode, CONST1_RTX (V16QImode));
 	rtx abd = gen_reg_rtx (V16QImode);
 	emit_insn (gen_aarch64_<su>abdv16qi (abd, operands[1], operands[2]));
-	emit_insn (gen_udot_prodv16qi (operands[0], abd, ones, operands[3]));
+	emit_insn (gen_udot_prodv4siv16qi (operands[0], abd, ones,
+					   operands[3]));
 	DONE;
       }
     rtx reduc = gen_reg_rtx (V8HImode);
@@ -3887,6 +3899,133 @@
 					     operands[1], operands[2]));
     }
 
+  DONE;
+})
+
+;; Patterns comparing two vectors and conditionally jump
+
+;; Define cbranch on masks.  This optab is only called for BOOLEAN_VECTOR_TYPE_P
+;; which allows optimizing compares with zero.
+(define_expand "cbranch<mode>4"
+  [(set (pc)
+        (if_then_else
+          (match_operator 0 "aarch64_equality_operator"
+            [(match_operand:VDQ_I 1 "register_operand")
+             (match_operand:VDQ_I 2 "aarch64_simd_reg_or_zero")])
+          (label_ref (match_operand 3 ""))
+          (pc)))]
+  "TARGET_SIMD"
+{
+  auto code = GET_CODE (operands[0]);
+  rtx tmp = operands[1];
+
+  /* If comparing against a non-zero vector we have to do a comparison first
+     so we can have a != 0 comparison with the result.  */
+  if (operands[2] != CONST0_RTX (<MODE>mode))
+    {
+      tmp = gen_reg_rtx (<MODE>mode);
+      emit_insn (gen_xor<mode>3 (tmp, operands[1], operands[2]));
+    }
+
+  /* For 64-bit vectors we need no reductions.  */
+  if (known_eq (128, GET_MODE_BITSIZE (<MODE>mode)))
+    {
+      /* Always reduce using a V4SI.  */
+      rtx reduc = gen_lowpart (V4SImode, tmp);
+      rtx res = gen_reg_rtx (V4SImode);
+      emit_insn (gen_aarch64_umaxpv4si (res, reduc, reduc));
+      emit_move_insn (tmp, gen_lowpart (<MODE>mode, res));
+    }
+
+  rtx val = gen_reg_rtx (DImode);
+  emit_move_insn (val, gen_lowpart (DImode, tmp));
+
+  rtx cc_reg = aarch64_gen_compare_reg (code, val, const0_rtx);
+  rtx cmp_rtx = gen_rtx_fmt_ee (code, DImode, cc_reg, const0_rtx);
+  emit_jump_insn (gen_condjump (cmp_rtx, cc_reg, operands[3]));
+  DONE;
+})
+
+;; Define vec_cbranch_any and vec_cbranch_all
+;; Vector comparison and branch for Adv. SIMD Integer types using SVE
+;; instructions.
+(define_expand "<optab><mode>"
+  [(set (pc)
+	(unspec:VALL
+	  [(if_then_else
+	    (match_operator 0 "aarch64_cbranch_compare_operation"
+	      [(match_operand:VALL 1 "register_operand")
+	       (match_operand:VALL 2 "aarch64_simd_reg_or_zero")])
+	    (label_ref (match_operand 3 ""))
+	    (pc))]
+	 CBRANCH_CMP))]
+  "TARGET_SIMD"
+{
+  auto code = GET_CODE (operands[0]);
+  if (TARGET_SVE)
+    {
+      machine_mode full_mode = aarch64_full_sve_mode (<VEL>mode).require ();
+
+      rtx in1 = gen_reg_rtx (full_mode);
+      emit_insn (gen_aarch64_sve_reinterpret (full_mode, in1, operands[1]));
+      rtx in2;
+      if (CONST0_RTX (<MODE>mode) == operands[2])
+	in2 = CONST0_RTX (full_mode);
+      else
+	{
+	  in2 = gen_reg_rtx (full_mode);
+	  emit_insn (gen_aarch64_sve_reinterpret (full_mode, in2,
+						     operands[2]));
+	}
+
+      unsigned lanes
+	= exact_div (GET_MODE_BITSIZE (<MODE>mode), 8).to_constant ();
+      machine_mode pred_mode = aarch64_sve_pred_mode (full_mode);
+      rtx ptrue = force_reg (VNx16BImode, aarch64_ptrue_all (lanes));
+	  rtx hint = gen_int_mode (SVE_KNOWN_PTRUE, SImode);
+
+      rtx tmp = gen_reg_rtx (pred_mode);
+      rtx cast_ptrue = gen_lowpart (pred_mode, ptrue);
+
+      if (FLOAT_MODE_P (full_mode))
+	{
+	  aarch64_expand_sve_vec_cmp_float (tmp, code, in1, in2, false);
+	  emit_insn (gen_aarch64_ptest (pred_mode, ptrue, cast_ptrue, hint,
+					tmp));
+	}
+      else
+	{
+	  aarch64_expand_sve_vec_cmp_int (tmp, code, in1, in2);
+	  emit_insn (gen_aarch64_ptest (pred_mode, ptrue, cast_ptrue, hint,
+					tmp));
+	}
+
+      rtx cc_reg = gen_rtx_REG (CC_NZCmode, CC_REGNUM);
+      rtx cmp_reg = gen_rtx_<cbranch_op> (VOIDmode, cc_reg, const0_rtx);
+      emit_jump_insn (gen_condjump (cmp_reg, cc_reg, operands[3]));
+      DONE;
+    }
+
+  rtx tmp = gen_reg_rtx (<V_INT_EQUIV>mode);
+  emit_insn (gen_vec_cmp<mode><v_int_equiv> (tmp, operands[0], operands[1],
+					     operands[2]));
+
+  /* For 128-bit vectors we need a reduction to 64-bit first.  */
+  if (known_eq (128, GET_MODE_BITSIZE (<MODE>mode)))
+    {
+      /* Always reduce using a V4SI.  */
+      rtx reduc = gen_lowpart (V4SImode, tmp);
+      rtx res = gen_reg_rtx (V4SImode);
+      emit_insn (gen_aarch64_umaxpv4si (res, reduc, reduc));
+      emit_move_insn (tmp, gen_lowpart (<V_INT_EQUIV>mode, res));
+    }
+
+  rtx val = gen_reg_rtx (DImode);
+  emit_move_insn (val, gen_lowpart (DImode, tmp));
+
+  rtx cc_reg = aarch64_gen_compare_reg (<cbranch_op>, val, const0_rtx);
+  rtx cmp_rtx = gen_rtx_fmt_ee (<cbranch_op>, DImode, cc_reg, const0_rtx);
+  emit_jump_insn (gen_condjump (cmp_rtx, cc_reg, operands[3]));
   DONE;
 })
 
@@ -8803,8 +8942,8 @@
   "TARGET_SIMD"
 {
   int start = INTVAL (operands[2]);
-  if (start != 0 && start != <nunits> / 2)
-    FAIL;
+  gcc_assert (start == 0 || start == 1);
+  start *= <nunits> / 2;
   rtx sel = aarch64_gen_stepped_int_parallel (<nunits> / 2, start, 1);
   emit_insn (gen_aarch64_get_half<mode> (operands[0], operands[1], sel));
   DONE;

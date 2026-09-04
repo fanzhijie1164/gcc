@@ -1262,27 +1262,26 @@ static const struct cpu_vector_cost ftc66x_vector_cost =
   nullptr, /* sve  */
   nullptr  /* issue_info  */
 };
-
 static const advsimd_vec_cost ftc86x_advsimd_vector_cost =
 {
-  2, /* int_stmt_cost  */
-  2, /* fp_stmt_cost  */
+  1, /* int_stmt_cost  */
+  1, /* fp_stmt_cost  */
   0, /* ld2_st2_permute_cost  */
   0, /* ld3_st3_permute_cost  */
   0, /* ld4_st4_permute_cost  */
   2, /* permute_cost  */
-  3, /* reduc_i8_cost  */
-  3, /* reduc_i16_cost  */
-  3, /* reduc_i32_cost  */
-  3, /* reduc_i64_cost  */
-  3, /* reduc_f16_cost  */
-  3, /* reduc_f32_cost  */
-  3, /* reduc_f64_cost  */
-  3, /* store_elt_extra_cost  */
-  3, /* vec_to_scalar_cost  */
-  2, /* scalar_to_vec_cost  */
-  5, /* align_load_cost  */
-  5, /* unalign_load_cost  */
+  2, /* reduc_i8_cost  */
+  2, /* reduc_i16_cost  */
+  2, /* reduc_i32_cost  */
+  2, /* reduc_i64_cost  */
+  2, /* reduc_f16_cost  */
+  2, /* reduc_f32_cost  */
+  2, /* reduc_f64_cost  */
+  2, /* store_elt_extra_cost  */
+  2, /* vec_to_scalar_cost  */
+  1, /* scalar_to_vec_cost  */
+  1, /* align_load_cost  */
+  1, /* unalign_load_cost  */
   1, /* unalign_store_cost  */
   1  /* store_cost  */
 };
@@ -1291,7 +1290,7 @@ static const struct cpu_vector_cost ftc86x_vector_cost =
 {
   1, /* scalar_int_stmt_cost  */
   1, /* scalar_fp_stmt_cost  */
-  4, /* scalar_load_cost  */
+  1, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
   1, /* cond_taken_branch_cost  */
   1, /* cond_not_taken_branch_cost  */
@@ -2197,7 +2196,9 @@ static const struct tune_params ftc86x_tunings =
   2,    /* min_div_recip_mul_df.  */
   0,    /* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,     /* autoprefetcher_model.  */
-  (AARCH64_EXTRA_TUNE_NONE),     /* tune_flags.  */
+  (AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND
+   | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
+   | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT), /* tune_flags.  */
   &ftc86x_prefetch_tune
 };
 
@@ -16658,7 +16659,7 @@ record_potential_advsimd_unrolling (loop_vec_info loop_vinfo)
 
   /* Check whether it is possible in principle to use Advanced SIMD
      instead.  */
-  if (aarch64_autovec_preference == 2)
+  if (aarch64_autovec_preference == AARCH64_AUTOVEC_SVE_ONLY)
     return;
 
   /* We don't want to apply the heuristic to outer loops, since it's
@@ -18535,7 +18536,7 @@ aarch64_override_options_internal (struct gcc_options *opts)
 
   /* If using Advanced SIMD only for autovectorization disable SVE vector costs
      comparison.  */
-  if (aarch64_autovec_preference == 1)
+  if (aarch64_autovec_preference == AARCH64_AUTOVEC_ASIMD_ONLY)
     SET_OPTION_IF_UNSET (opts, &global_options_set,
 			 aarch64_sve_compare_costs, 0);
 
@@ -21361,8 +21362,8 @@ static bool
 aarch64_cmp_autovec_modes (machine_mode sve_m, machine_mode asimd_m)
 {
   /* Take into account the aarch64-autovec-preference param if non-zero.  */
-  bool only_asimd_p = aarch64_autovec_preference == 1;
-  bool only_sve_p = aarch64_autovec_preference == 2;
+  bool only_asimd_p = aarch64_autovec_preference == AARCH64_AUTOVEC_ASIMD_ONLY;
+  bool only_sve_p = aarch64_autovec_preference == AARCH64_AUTOVEC_SVE_ONLY;
 
   if (only_asimd_p)
     return false;
@@ -21370,8 +21371,8 @@ aarch64_cmp_autovec_modes (machine_mode sve_m, machine_mode asimd_m)
     return true;
 
   /* The preference in case of a tie in costs.  */
-  bool prefer_asimd = aarch64_autovec_preference == 3;
-  bool prefer_sve = aarch64_autovec_preference == 4;
+  bool prefer_asimd = aarch64_autovec_preference == AARCH64_AUTOVEC_PREFER_ASIMD;
+  bool prefer_sve = aarch64_autovec_preference == AARCH64_AUTOVEC_PREFER_SVE;
 
   poly_int64 nunits_sve = GET_MODE_NUNITS (sve_m);
   poly_int64 nunits_asimd = GET_MODE_NUNITS (asimd_m);
@@ -21472,8 +21473,8 @@ aarch64_autovectorize_vector_modes (vector_modes *modes, bool)
        than an SVE main loop with N bytes then by default we'll try to
        use the SVE loop to vectorize the epilogue instead.  */
 
-  bool only_asimd_p = aarch64_autovec_preference == 1;
-  bool only_sve_p = aarch64_autovec_preference == 2;
+  bool only_asimd_p = aarch64_autovec_preference == AARCH64_AUTOVEC_ASIMD_ONLY;
+  bool only_sve_p = aarch64_autovec_preference == AARCH64_AUTOVEC_SVE_ONLY;
 
   unsigned int sve_i = (TARGET_SVE && !only_asimd_p) ? 0 : ARRAY_SIZE (sve_modes);
   unsigned int advsimd_i = 0;
@@ -27278,6 +27279,15 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
   return true;
 }
 
+/* Implement TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE.  Assume that
+   predicated operations when available are beneficial.  */
+
+static bool
+aarch64_conditional_operation_is_expensive (unsigned)
+{
+  return false;
+}
+
 /* Implement TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE.  Assume for now that
    it isn't worth branching around empty masked ops (including masked
    stores).  */
@@ -27884,12 +27894,17 @@ aarch64_simd_clone_adjust (struct cgraph_node *node)
 /* Implement TARGET_SIMD_CLONE_USABLE.  */
 
 static int
-aarch64_simd_clone_usable (struct cgraph_node *node)
+aarch64_simd_clone_usable (struct cgraph_node *node, machine_mode vector_mode)
 {
   switch (node->simdclone->vecsize_mangle)
     {
     case 'n':
-      if (!TARGET_SIMD)
+      if (!TARGET_SIMD || aarch64_sve_mode_p (vector_mode))
+	return -1;
+      return 0;
+    case 's':
+      if (!TARGET_SVE
+	  || !aarch64_sve_mode_p (vector_mode))
 	return -1;
       return 0;
     default:
@@ -28851,6 +28866,9 @@ aarch64_libgcc_floating_mode_supported_p
 #define TARGET_VECTORIZE_RELATED_MODE aarch64_vectorize_related_mode
 #undef TARGET_VECTORIZE_GET_MASK_MODE
 #define TARGET_VECTORIZE_GET_MASK_MODE aarch64_get_mask_mode
+#undef TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE
+#define TARGET_VECTORIZE_CONDITIONAL_OPERATION_IS_EXPENSIVE \
+  aarch64_conditional_operation_is_expensive
 #undef TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE
 #define TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE \
   aarch64_empty_mask_is_expensive

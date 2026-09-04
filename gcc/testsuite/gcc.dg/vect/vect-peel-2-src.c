@@ -22,6 +22,7 @@ int main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 1; i <= N; i++)
     {
       if (ia[i] != ib[i+2] + ib[i+6])
@@ -45,4 +46,3 @@ int main (void)
 
   return main1 ();
 }
-

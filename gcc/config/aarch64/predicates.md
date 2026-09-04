@@ -403,6 +403,13 @@
 (define_special_predicate "aarch64_equality_operator"
   (match_code "eq,ne"))
 
+(define_special_predicate "aarch64_cbranch_compare_operation"
+  (match_code "eq,ne,le,lt,ge,gt,geu,gtu,leu,ltu,unordered,
+	       ordered,unlt,unle,unge,ungt")
+{
+  return TARGET_SIMD;
+})
+
 (define_special_predicate "aarch64_carry_operation"
   (match_code "ltu,geu")
 {
@@ -1014,3 +1021,7 @@
   (and (match_code "const_int")
        (match_test "IN_RANGE (INTVAL (op),  -4096, 4080)
 		    && !(INTVAL (op) & 0xf)")))
+
+(define_predicate "aarch64_maskload_else_operand"
+  (and (match_code "const_int,const_vector")
+       (match_test "op == CONST0_RTX (GET_MODE (op))")))

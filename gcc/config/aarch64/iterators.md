@@ -658,6 +658,10 @@
     UNSPEC_SSHLL	; Used in aarch64-simd.md.
     UNSPEC_USHLL	; Used in aarch64-simd.md.
     UNSPEC_ADDP		; Used in aarch64-simd.md.
+    UNSPEC_CMP_ALL	; Used in aarch64-simd.md.
+    UNSPEC_CMP_ANY	; Used in aarch64-simd.md.
+    UNSPEC_COND_CMP_ALL	; Used in aarch64-simd.md.
+    UNSPEC_COND_CMP_ANY	; Used in aarch64-simd.md.
     UNSPEC_TBL		; Used in vector permute patterns.
     UNSPEC_TBX		; Used in vector permute patterns.
     UNSPEC_CONCAT	; Used in vector permute patterns.
@@ -2104,6 +2108,12 @@
 			 (VNx16SI "vnx4bi") (VNx16SF "vnx4bi")
 			 (VNx8DI "vnx2bi") (VNx8DF "vnx2bi")])
 
+;; Map mode to suffix for using an SVE comparison
+(define_mode_attr sve_cmp_suff [(V8QI "_int") (V16QI "_int")
+			       (V4HI "_int") (V8HI "_int") (V2SI "_int")
+			       (V4SI "_int") (V2DI "_int")
+			       (V2SF "_float") (V4SF "_float") (V2DF "_float")])
+
 (define_mode_attr VDOUBLE [(VNx16QI "VNx32QI")
 			   (VNx8HI "VNx16HI") (VNx8HF "VNx16HF")
 			   (VNx8BF "VNx16BF")
@@ -2617,6 +2627,9 @@
 
 (define_int_iterator RHADD [UNSPEC_SRHADD UNSPEC_URHADD])
 
+(define_int_iterator CBRANCH_CMP [UNSPEC_CMP_ALL UNSPEC_CMP_ANY])
+(define_int_iterator COND_CBRANCH_CMP [UNSPEC_COND_CMP_ALL UNSPEC_COND_CMP_ANY])
+
 (define_int_iterator BSL_DUP [1 2])
 
 (define_int_iterator DOTPROD [UNSPEC_SDOT UNSPEC_UDOT])
@@ -2890,10 +2903,6 @@
 				     UNSPEC_LSHIFTRT_WIDE])
 
 (define_int_iterator SVE_LDFF1_LDNF1 [UNSPEC_LDFF1 UNSPEC_LDNF1])
-
-(define_int_iterator SVE_PRED_LOAD [UNSPEC_PRED_X UNSPEC_LD1_SVE])
-
-(define_int_attr pred_load [(UNSPEC_PRED_X "_x") (UNSPEC_LD1_SVE "")])
 
 (define_int_iterator SVE2_U32_UNARY [UNSPEC_URECPE UNSPEC_RSQRTE])
 
@@ -3299,7 +3308,16 @@
 			(UNSPEC_COND_FSQRT "sqrt")
 			(UNSPEC_COND_FSUB "sub")
 			(UNSPEC_COND_SCVTF "float")
-			(UNSPEC_COND_UCVTF "floatuns")])
+			(UNSPEC_COND_UCVTF "floatuns")
+			(UNSPEC_CMP_ALL "vec_cbranch_all")
+			(UNSPEC_CMP_ANY "vec_cbranch_any")
+			(UNSPEC_COND_CMP_ALL "cond_vec_cbranch_all")
+			(UNSPEC_COND_CMP_ANY "cond_vec_cbranch_any")])
+
+(define_int_attr cbranch_op [(UNSPEC_CMP_ALL "EQ")
+			     (UNSPEC_CMP_ANY "NE")
+			     (UNSPEC_COND_CMP_ALL "EQ")
+			     (UNSPEC_COND_CMP_ANY "NE")])
 
 (define_int_attr fmaxmin [(UNSPEC_FMAX "fmax_nan")
 			  (UNSPEC_FMAXNM "fmax")

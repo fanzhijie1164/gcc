@@ -700,6 +700,15 @@ extern void canonicalize_comparison (machine_mode, enum rtx_code *, rtx *);
 extern unsigned HOST_WIDE_INT choose_multiplier (unsigned HOST_WIDE_INT, int,
 						 int, unsigned HOST_WIDE_INT *,
 						 int *, int *);
+inline unsigned HOST_WIDE_INT
+choose_multiplier (unsigned HOST_WIDE_INT d, int n, int precision,
+		   unsigned HOST_WIDE_INT *multiplier_ptr,
+		   int *post_shift_ptr)
+{
+  int lgup;
+  return choose_multiplier (d, n, precision, multiplier_ptr, post_shift_ptr,
+			    &lgup);
+}
 
 #ifdef TREE_CODE
 extern rtx expand_variable_shift (enum tree_code, machine_mode,
@@ -723,5 +732,7 @@ extern rtx extract_low_bits (machine_mode, machine_mode, rtx);
 extern rtx expand_mult (machine_mode, rtx, rtx, rtx, int, bool = false);
 extern rtx expand_mult_highpart_adjust (scalar_int_mode, rtx, rtx, rtx,
 					rtx, int);
+extern rtx expmed_mult_highpart_optab (scalar_int_mode, rtx, rtx, rtx,
+				       int, int);
 
 #endif  // EXPMED_H

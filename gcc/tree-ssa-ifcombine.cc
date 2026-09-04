@@ -364,7 +364,7 @@ update_profile_after_ifcombine (basic_block inner_cond_bb,
 		 : EDGE_SUCC (outer_cond_bb, 0));
   edge inner_taken = EDGE_SUCC (inner_cond_bb, 0);
   edge inner_not_taken = EDGE_SUCC (inner_cond_bb, 1);
-  
+
   if (inner_taken->dest != outer2->dest)
     std::swap (inner_taken, inner_not_taken);
   gcc_assert (inner_taken->dest == outer2->dest);
@@ -607,7 +607,7 @@ ifcombine_ifandif (basic_block inner_cond_bb, bool inner_inv,
 				boolean_type_node,
 				gimple_cond_lhs (outer_cond),
 				gimple_cond_rhs (outer_cond));
-	  t = fold_build2_loc (gimple_location (inner_cond), 
+	  t = fold_build2_loc (gimple_location (inner_cond),
 			       TRUTH_AND_EXPR, boolean_type_node, t1, t2);
 	  if (result_inv)
 	    {
@@ -866,7 +866,7 @@ pass_tree_ifcombine::execute (function *fun)
 		     || POINTER_TYPE_P (TREE_TYPE (lhs)))
 		    && arith_code_with_undefined_signed_overflow
 			 (gimple_assign_rhs_code (ass)))
-		  rewrite_to_defined_overflow (ass, true);
+		  rewrite_to_defined_overflow (&gsi);
 	      }
 	    cfg_changed |= true;
 	  }

@@ -24,6 +24,7 @@ f(struct s *ptr, unsigned n) {
 
 void __attribute__ ((noipa))
 check_f(struct s *ptr) {
+#pragma GCC novector
     for (unsigned i = 0; i < N; ++i)
       if (ptr[i].a != V)
 	abort ();
@@ -41,4 +42,3 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */
-

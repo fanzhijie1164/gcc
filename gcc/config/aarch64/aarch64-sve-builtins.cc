@@ -2721,6 +2721,21 @@ function_expander::direct_optab_handler_for_sign (optab signed_op,
   return ::direct_optab_handler (op, mode);
 }
 
+/* Choose between signed and unsigned convert optabs SIGNED_OP and
+   UNSIGNED_OP based on the signedness of type suffix SUFFIX_I, then
+   pick the appropriate optab handler for "converting" from FROM_MODE
+   to TO_MODE.  */
+insn_code
+function_expander::convert_optab_handler_for_sign (optab signed_op,
+						   optab unsigned_op,
+						   unsigned int suffix_i,
+						   machine_mode to_mode,
+						   machine_mode from_mode)
+{
+  optab op = type_suffix (suffix_i).unsigned_p ? unsigned_op : signed_op;
+  return ::convert_optab_handler (op, to_mode, from_mode);
+}
+
 /* Return true if X overlaps any input.  */
 bool
 function_expander::overlaps_input_p (rtx x)
@@ -3174,9 +3189,12 @@ function_expander::use_vcond_mask_insn (insn_code icode,
 /* Implement the call using instruction ICODE, which loads memory operand 1
    into register operand 0 under the control of predicate operand 2.
    Extending loads have a further predicate (operand 3) that nominally
-   controls the extension.  */
+   controls the extension.
+   HAS_ELSE is true if the pattern has an additional operand that specifies
+   the values of inactive lanes.  This exists to match the general maskload
+   interface and is always zero for AArch64.  */
 rtx
-function_expander::use_contiguous_load_insn (insn_code icode)
+function_expander::use_contiguous_load_insn (insn_code icode, bool has_else)
 {
   machine_mode mem_mode = memory_vector_mode ();
 
@@ -3185,6 +3203,11 @@ function_expander::use_contiguous_load_insn (insn_code icode)
   add_input_operand (icode, args[0]);
   if (GET_MODE_UNIT_BITSIZE (mem_mode) < type_suffix (0).element_bits)
     add_input_operand (icode, CONSTM1_RTX (VNx16BImode));
+
+  /* If we have an else operand, add it.  */
+  if (has_else)
+    add_input_operand (icode, CONST0_RTX (mem_mode));
+
   return generate_insn (icode);
 }
 

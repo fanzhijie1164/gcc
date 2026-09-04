@@ -43,6 +43,7 @@ int main (void)
 
   foo ();
 
+#pragma GCC novector
   for (j = 0; j < M; j++)
     if (x_out[j] != check_result[j])
       abort ();
@@ -51,5 +52,4 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "OUTER LOOP VECTORIZED" 1 "vect" { xfail { vect_no_align && { ! vect_hw_misalign } } } } } */
-
 

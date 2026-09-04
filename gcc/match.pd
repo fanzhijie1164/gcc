@@ -358,7 +358,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
        tree ones = build_all_ones_cst (vec_cmp_type);
       }
       (if (expand_vec_cmp_expr_p (vec_cmp_type, vec_truth_type, LT_EXPR)
-	   && expand_vec_cond_expr_p (vec_cmp_type, vec_truth_type, LT_EXPR))
+	   && expand_vec_cond_expr_p (vec_cmp_type, vec_truth_type))
        (view_convert:type (vec_cond (lt:vec_truth_type
 				     (view_convert:vec_cmp_type @0)
 				     { zeros; })
