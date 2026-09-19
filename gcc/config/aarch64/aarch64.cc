@@ -1506,7 +1506,8 @@ static const struct tune_params generic_tunings =
   /* Enabling AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS significantly benefits
      Neoverse V1.  It does not have a noticeable effect on A64FX and should
      have at most a very minor effect on SVE2 cores.  */
-  (AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS),	/* tune_flags.  */
+  (AARCH64_EXTRA_TUNE_CHEAP_SHIFT_EXTEND
+   | AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS),	/* tune_flags.  */
   &generic_prefetch_tune
 };
 

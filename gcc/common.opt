@@ -1811,6 +1811,10 @@ Common Var(flag_large_source_files) Init(0)
 Improve GCC's ability to track column numbers in large source files,
 at the expense of slower compilation.
 
+flate-combine-instructions
+Common Var(flag_late_combine_instructions) Optimization Init(0)
+Run an instruction combination pass late after register allocation.
+
 floop-parallelize-all
 Common Var(flag_loop_parallelize_all) Optimization
 Mark all loops as parallel.
