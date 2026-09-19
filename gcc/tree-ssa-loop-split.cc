@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfghooks.h"
 #include "gimple-fold.h"
 #include "gimplify-me.h"
+#include "value-query.h"
 
 /* This file implements two kinds of loop splitting.
 
@@ -74,7 +75,8 @@ along with GCC; see the file COPYING3.  If not see
    point in *BORDER and the comparison induction variable in IV.  */
 
 static tree
-split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv)
+split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv,
+	       enum tree_code *guard_code)
 {
   gcond *stmt;
   affine_iv iv2;
@@ -85,19 +87,6 @@ split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv)
     return NULL_TREE;
 
   enum tree_code code = gimple_cond_code (stmt);
-
-  /* Only handle relational comparisons, for equality and non-equality
-     we'd have to split the loop into two loops and a middle statement.  */
-  switch (code)
-    {
-      case LT_EXPR:
-      case LE_EXPR:
-      case GT_EXPR:
-      case GE_EXPR:
-	break;
-      default:
-	return NULL_TREE;
-    }
 
   if (loop_exits_from_bb_p (loop, bb))
     return NULL_TREE;
@@ -128,6 +117,50 @@ split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv)
   if (!iv->no_overflow)
     return NULL_TREE;
 
+  /* Equality tests against the first, minimum, or maximum IV value can be
+     represented as a relational test and need only two split loops.  */
+  switch (code)
+    {
+      case LT_EXPR:
+      case LE_EXPR:
+      case GT_EXPR:
+      case GE_EXPR:
+	break;
+      case NE_EXPR:
+      case EQ_EXPR:
+	if (operand_equal_p (iv->base, iv2.base, 0))
+	  {
+	    if (code == EQ_EXPR)
+	      code = !tree_int_cst_sign_bit (iv->step) ? LE_EXPR : GE_EXPR;
+	    else
+	      code = !tree_int_cst_sign_bit (iv->step) ? GT_EXPR : LT_EXPR;
+	    break;
+	  }
+	else
+	  {
+	    int_range<2> r;
+	    get_global_range_query ()->range_of_expr (r, op0, stmt);
+	    if (!r.varying_p () && !r.undefined_p ()
+		&& TREE_CODE (op1) == INTEGER_CST)
+	      {
+		wide_int val = wi::to_wide (op1);
+		if (known_eq (val, r.lower_bound ()))
+		  {
+		    code = (code == EQ_EXPR) ? LE_EXPR : GT_EXPR;
+		    break;
+		  }
+		else if (known_eq (val, r.upper_bound ()))
+		  {
+		    code = (code == EQ_EXPR) ? GE_EXPR : LT_EXPR;
+		    break;
+		  }
+	      }
+	  }
+	return NULL_TREE;
+      default:
+	return NULL_TREE;
+    }
+
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Found potential split point: ");
@@ -142,6 +175,7 @@ split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv)
     }
 
   *border = iv2.base;
+  *guard_code = code;
   return op0;
 }
 
@@ -152,13 +186,12 @@ split_at_bb_p (class loop *loop, basic_block bb, tree *border, affine_iv *iv)
    also be true/false in the next iteration.  */
 
 static void
-patch_loop_exit (class loop *loop, gcond *guard, tree nextval, tree newbound,
-		 bool initial_true)
+patch_loop_exit (class loop *loop, tree_code guard_code, tree nextval,
+		 tree newbound, bool initial_true)
 {
   edge exit = single_exit (loop);
   gcond *stmt = as_a <gcond *> (*gsi_last_bb (exit->src));
-  gimple_cond_set_condition (stmt, gimple_cond_code (guard),
-			     nextval, newbound);
+  gimple_cond_set_condition (stmt, guard_code, nextval, newbound);
   update_stmt (stmt);
 
   edge stay = EDGE_SUCC (exit->src, EDGE_SUCC (exit->src, 0) == exit);
@@ -540,10 +573,17 @@ split_loop (class loop *loop1)
       || !empty_block_p (loop1->latch)
       || !easy_exit_values (loop1)
       || !number_of_iterations_exit (loop1, exit1, &niter, false, true)
-      || niter.cmp == ERROR_MARK
-      /* We can't yet handle loops controlled by a != predicate.  */
-      || niter.cmp == NE_EXPR)
+      || niter.cmp == ERROR_MARK)
     return false;
+  if (niter.cmp == NE_EXPR)
+    {
+      if (!niter.control.no_overflow)
+	return false;
+      if (tree_int_cst_sign_bit (niter.control.step))
+	niter.cmp = GT_EXPR;
+      else
+	niter.cmp = LT_EXPR;
+    }
 
   bbs = get_loop_body (loop1);
 
@@ -554,8 +594,10 @@ split_loop (class loop *loop1)
     }
 
   /* Find a splitting opportunity.  */
+  enum tree_code guard_code;
   for (i = 0; i < loop1->num_nodes; i++)
-    if ((guard_iv = split_at_bb_p (loop1, bbs[i], &border, &iv)))
+    if ((guard_iv = split_at_bb_p (loop1, bbs[i], &border, &iv,
+				   &guard_code)))
       {
 	/* Handling opposite steps is not implemented yet.  Neither
 	   is handling different step sizes.  */
@@ -572,8 +614,6 @@ split_loop (class loop *loop1)
 	gcond *guard_stmt = as_a<gcond *> (*gsi_last_bb (bbs[i]));
 	tree guard_init = PHI_ARG_DEF_FROM_EDGE (phi,
 						 loop_preheader_edge (loop1));
-	enum tree_code guard_code = gimple_cond_code (guard_stmt);
-
 	/* Loop splitting is implemented by versioning the loop, placing
 	   the new loop after the old loop, make the first loop iterate
 	   as long as the conditional stays true (or false) and let the
@@ -638,7 +678,7 @@ split_loop (class loop *loop1)
 	  gsi_insert_seq_on_edge_immediate (loop_preheader_edge (loop1),
 					    stmts);
 	tree guard_next = PHI_ARG_DEF_FROM_EDGE (phi, loop_latch_edge (loop1));
-	patch_loop_exit (loop1, guard_stmt, guard_next, newend, initial_true);
+	patch_loop_exit (loop1, guard_code, guard_next, newend, initial_true);
 
 	fix_loop_bb_probability (loop1, loop2, true_edge, false_edge);
 

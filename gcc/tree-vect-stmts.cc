@@ -418,6 +418,24 @@ vect_stmt_relevant_p (stmt_vec_info stmt_info, loop_vec_info loop_vinfo,
 	}
     }
 
+  /* Check if it's a not live PHI and multiple exits.  In this case
+     there will be a usage later on after peeling which is needed for the
+     alternate exit.  */
+  if (LOOP_VINFO_EARLY_BREAKS (loop_vinfo)
+      && is_a <gphi *> (stmt)
+      && gimple_bb (stmt) == LOOP_VINFO_LOOP (loop_vinfo)->header
+      && ((! VECTORIZABLE_CYCLE_DEF (STMT_VINFO_DEF_TYPE (stmt_info))
+	   && ! *live_p)
+	  || STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def))
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vec_stmt_relevant_p: PHI forced live for "
+			 "early break.\n");
+      LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo).safe_push (stmt_info);
+      *live_p = true;
+    }
+
   if (*live_p && *relevant == vect_unused_in_scope
       && !is_simple_and_all_uses_invariant (stmt_info, loop_vinfo))
     {
