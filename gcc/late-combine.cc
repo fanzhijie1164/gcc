@@ -579,15 +579,19 @@ late_combine::check_register_pressure (insn_info *insn, rtx set)
 bool
 late_combine::check_uses (set_info *def, rtx set)
 {
-  // GCC 12's RTL-SSA change machinery predates support for rewriting
-  // optional and multiple uses as one change group.  Limit this backport to
-  // the single ordinary use handled safely by that machinery.
-  use_info *single_use = def->single_nondebug_insn_use ();
-  if (!single_use
-      || single_use->is_live_out_use ()
-      || single_use->only_occurs_in_notes ()
-      || def->first_use () != single_use
-      || single_use->next_use ())
+  // GCC 12's RTL-SSA machinery cannot safely remove definitions that have
+  // no nondebug instruction uses.  Leave those definitions to DCE.
+  if (!def->has_nondebug_insn_uses () || def->has_phi_uses ())
+    return false;
+
+  // Keep multi-use substitutions conservative on GCC 12.  Register copies
+  // and simple extensions are enough to remove the argument and index
+  // pseudos that otherwise increase register pressure before IRA.
+  rtx src = SET_SRC (set);
+  if (!def->single_nondebug_insn_use ()
+      && !REG_P (src)
+      && !((GET_CODE (src) == ZERO_EXTEND || GET_CODE (src) == SIGN_EXTEND)
+	   && REG_P (XEXP (src, 0))))
     return false;
 
   use_info *prev_use = nullptr;
@@ -602,6 +606,16 @@ late_combine::check_uses (set_info *def, rtx set)
 
       // We cannot replace all uses if the value is live on exit.
       if (use->is_artificial ())
+	return false;
+
+      // GCC 12's RTL-SSA resource tracking does not reliably prevent a
+      // register copy from being propagated across a call that clobbers the
+      // source register.  Keep such copies for register allocation and
+      // postreload cleanup to handle normally.
+      rtx_insn *rtl = NEXT_INSN (def->insn ()->rtl ());
+      while (rtl && rtl != use_insn->rtl () && !CALL_P (rtl))
+	rtl = NEXT_INSN (rtl);
+      if (!rtl || CALL_P (rtl))
 	return false;
 
       // Avoid increasing the complexity of instructions that
@@ -766,9 +780,7 @@ public:
 bool
 pass_late_combine::gate (function *)
 {
-  return (optimize > 0
-	  && reload_completed
-	  && flag_late_combine_instructions);
+  return optimize > 0 && flag_late_combine_instructions;
 }
 
 unsigned int
