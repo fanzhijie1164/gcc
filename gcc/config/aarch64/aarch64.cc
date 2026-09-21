@@ -2186,7 +2186,7 @@ static const struct tune_params ftc86x_tunings =
   4,    /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_ALU_CBZ | AARCH64_FUSE_CMP_BRANCH
    | AARCH64_FUSE_ALU_BRANCH), /* fusible_ops  */
-  "16", /* function_align.  */
+  "64:33", /* function_align.  */
   "4",  /* jump_align.  */
   "8",  /* loop_align.  */
   2,    /* int_reassoc_width.  */
@@ -18462,6 +18462,10 @@ aarch64_override_options_internal (struct gcc_options *opts)
   aarch64_tune_params = *(tune->tune);
   if (tune->tune == &generic_tunings)
     aarch64_adjust_generic_arch_tuning (aarch64_tune_params);
+
+  if (tune->tune == &ftc86x_tunings)
+    SET_OPTION_IF_UNSET (opts, &global_options_set,
+			 flag_limit_function_alignment, 1);
 
   if (opts->x_aarch64_override_tune_string)
     aarch64_parse_override_string (opts->x_aarch64_override_tune_string,
