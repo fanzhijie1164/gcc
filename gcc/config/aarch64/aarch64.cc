@@ -2186,7 +2186,7 @@ static const struct tune_params ftc86x_tunings =
   4,    /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_ALU_CBZ | AARCH64_FUSE_CMP_BRANCH
    | AARCH64_FUSE_ALU_BRANCH), /* fusible_ops  */
-  "64:33", /* function_align.  */
+  "16", /* function_align.  */
   "4",  /* jump_align.  */
   "8",  /* loop_align.  */
   2,    /* int_reassoc_width.  */
