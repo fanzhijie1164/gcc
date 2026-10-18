@@ -16608,6 +16608,51 @@ aarch64_use_new_vector_costs_p ()
 	  & AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS);
 }
 
+/* Return true for byte-wise early-break search loops whose induction
+   variable starts at a run-time value.  On FTC86X, vectorizing this form is
+   unprofitable: finding the first matching element requires enough setup and
+   fixup code to outweigh the vectorized byte comparisons.  Keep the check
+   deliberately narrow so that constant-start search loops retain their
+   current vectorization decisions.  */
+
+static bool
+aarch64_ftc86x_variable_start_byte_search_p (loop_vec_info loop_vinfo)
+{
+  if (aarch64_tune != ftc86x
+      || !LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return false;
+
+  vec<data_reference_p> datarefs = LOOP_VINFO_DATAREFS (loop_vinfo);
+  if (datarefs.length () != 2)
+    return false;
+
+  for (data_reference *dr : datarefs)
+    {
+      tree ref_type = TREE_TYPE (DR_REF (dr));
+      if (!DR_IS_READ (dr)
+	  || !INTEGRAL_TYPE_P (ref_type)
+	  || TYPE_PRECISION (ref_type) != BITS_PER_UNIT
+	  || !integer_onep (DR_STEP (dr)))
+	return false;
+    }
+
+  class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+  edge preheader = loop_preheader_edge (loop);
+  for (gphi_iterator psi = gsi_start_phis (loop->header);
+       !gsi_end_p (psi); gsi_next (&psi))
+    {
+      gphi *phi = psi.phi ();
+      stmt_vec_info stmt_info = loop_vinfo->lookup_stmt (phi);
+      if (stmt_info
+	  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def
+	  && !is_gimple_min_invariant (PHI_ARG_DEF_FROM_EDGE (phi,
+						       preheader)))
+	return true;
+    }
+
+  return false;
+}
+
 /* Return the appropriate SIMD costs for vectors of type VECTYPE.  */
 static const simd_vec_cost *
 aarch64_simd_vec_costs (tree vectype)
@@ -17828,6 +17873,20 @@ aarch64_vector_costs::finish_cost (const vector_costs *uncast_scalar_costs)
       m_costs[vect_body] = adjust_body_cost (loop_vinfo, scalar_costs,
 					     m_costs[vect_body]);
       m_suggested_unroll_factor = determine_suggested_unroll_factor ();
+    }
+
+  if (loop_vinfo
+      && m_vec_flags
+      && scalar_costs
+      && aarch64_ftc86x_variable_start_byte_search_p (loop_vinfo))
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			 "not vectorized: variable-start byte search is "
+			 "not profitable on FTC86X.\n");
+      m_costs[vect_body]
+	= (2 * vect_vf_for_cost (loop_vinfo)
+	   * scalar_costs->total_cost ());
     }
 
   /* Apply the heuristic described above m_stp_sequence_cost.  Prefer
