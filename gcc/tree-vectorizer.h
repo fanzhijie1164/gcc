@@ -984,6 +984,10 @@ public:
      the loop for the break finding loop.  */
   bool early_breaks;
 
+  /* True for byte-wise early-break search loops whose induction variable
+     starts at a run-time value.  */
+  bool early_break_variable_start_byte_search;
+
   /* List of loop additional IV conditionals found in the loop.  */
   auto_vec<gcond *> conds;
 
@@ -1133,6 +1137,8 @@ public:
 #define LOOP_VINFO_PEELING_FOR_GAPS(L)     (L)->peeling_for_gaps
 #define LOOP_VINFO_PEELING_FOR_NITER(L)    (L)->peeling_for_niter
 #define LOOP_VINFO_EARLY_BREAKS(L)         (L)->early_breaks
+#define LOOP_VINFO_EARLY_BREAK_VARIABLE_START_BYTE_SEARCH(L) \
+  (L)->early_break_variable_start_byte_search
 #define LOOP_VINFO_EARLY_BRK_STORES(L)     (L)->early_break_stores
 #define LOOP_VINFO_EARLY_BREAKS_VECT_PEELED(L)  \
   (single_pred ((L)->loop->latch) != (L)->vec_loop_iv_exit->src)

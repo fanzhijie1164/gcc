@@ -17830,6 +17830,23 @@ aarch64_vector_costs::finish_cost (const vector_costs *uncast_scalar_costs)
       m_suggested_unroll_factor = determine_suggested_unroll_factor ();
     }
 
+  /* On FTC86X, the setup and fixup needed by variable-start byte searches
+     outweighs the benefit of vectorizing the byte comparisons.  */
+  if (loop_vinfo
+      && m_vec_flags
+      && scalar_costs
+      && aarch64_tune == ftc86x
+      && LOOP_VINFO_EARLY_BREAK_VARIABLE_START_BYTE_SEARCH (loop_vinfo))
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			 "not vectorized: variable-start byte search is "
+			 "not profitable on FTC86X.\n");
+      m_costs[vect_body]
+	= (2 * vect_vf_for_cost (loop_vinfo)
+	   * scalar_costs->total_cost ());
+    }
+
   /* Apply the heuristic described above m_stp_sequence_cost.  Prefer
      the scalar code in the event of a tie, since there is more chance
      of scalar code being optimized with surrounding operations.
