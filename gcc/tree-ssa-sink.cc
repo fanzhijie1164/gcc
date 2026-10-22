@@ -192,6 +192,56 @@ select_best_block (basic_block early_bb,
 		   basic_block late_bb,
 		   gimple *stmt)
 {
+  if (flag_sink_profitability)
+    {
+      basic_block best_bb = late_bb;
+      basic_block temp_bb = late_bb;
+
+      while (temp_bb != early_bb)
+	{
+	  /* Walk up the dominator tree, hopefully we'll find a shallower
+	     loop nest.  */
+	  temp_bb = get_immediate_dominator (CDI_DOMINATORS, temp_bb);
+
+	  /* If we've moved into a lower loop nest, then that becomes
+	     our best block.  */
+	  if (bb_loop_depth (temp_bb) < bb_loop_depth (best_bb))
+	    best_bb = temp_bb;
+	}
+
+      /* Placing a statement before a setjmp-like function would be invalid.
+	 If we selected a block with abnormal predecessors, just punt.  */
+      if (bb_has_abnormal_pred (best_bb))
+	return early_bb;
+
+      if (bb_loop_depth (best_bb) < bb_loop_depth (early_bb))
+	return best_bb;
+
+      /* Do not move stmts to post-dominating places on the same loop depth.  */
+      if (dominated_by_p (CDI_POST_DOMINATORS, early_bb, best_bb))
+	return early_bb;
+
+      /* If the latch block is empty, don't make it non-empty by sinking
+	 something into it.  */
+      if (best_bb == early_bb->loop_father->latch
+	  && empty_block_p (best_bb))
+	return early_bb;
+
+      /* Avoid turning an unconditional read into a conditional one when we
+	 still might want to perform vectorization.  */
+      if (best_bb->loop_father == early_bb->loop_father
+	  && loop_outer (best_bb->loop_father)
+	  && !best_bb->loop_father->inner
+	  && gimple_vuse (stmt)
+	  && flag_tree_loop_vectorize
+	  && !(cfun->curr_properties & PROP_loop_opts_done)
+	  && dominated_by_p (CDI_DOMINATORS, best_bb->loop_father->latch, early_bb)
+	  && !dominated_by_p (CDI_DOMINATORS, best_bb->loop_father->latch, best_bb))
+	return early_bb;
+
+      return best_bb;
+    }
+
   basic_block best_bb = late_bb;
   basic_block temp_bb = late_bb;
   int threshold;
@@ -486,7 +536,8 @@ statement_sink_location (gimple *stmt, basic_block frombb,
 
   /* If the latch block is empty, don't make it non-empty by sinking
      something into it.  */
-  if (sinkbb == frombb->loop_father->latch
+  if (!flag_sink_profitability
+      && sinkbb == frombb->loop_father->latch
       && empty_block_p (sinkbb))
     return false;
 

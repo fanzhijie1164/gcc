@@ -1811,6 +1811,10 @@ Common Var(flag_large_source_files) Init(0)
 Improve GCC's ability to track column numbers in large source files,
 at the expense of slower compilation.
 
+flate-combine-instructions
+Common Var(flag_late_combine_instructions) Optimization Init(0)
+Run an instruction combination pass late after register allocation.
+
 floop-parallelize-all
 Common Var(flag_loop_parallelize_all) Optimization
 Mark all loops as parallel.
@@ -3177,6 +3181,10 @@ ftree-sink
 Common Var(flag_tree_sink) Optimization
 Enable SSA code sinking on trees.
 
+fsink-profitability
+Common Var(flag_sink_profitability) Optimization Init(0)
+Use the enhanced profitability checks for SSA code sinking.
+
 ftree-slsr
 Common Var(flag_tree_slsr) Optimization
 Perform straight-line strength reduction.
@@ -3345,6 +3353,10 @@ Restrict the range of data dependence analysis to max_nunits stmts in SLP.
 ftree-slp-transpose-vectorize
 Common Var(flag_tree_slp_transpose_vectorize) Optimization Init(0)
 Enable basic block vectorization (SLP) for transposed stores and loads on trees.
+
+floop-split-vectorize
+Common Var(flag_loop_split_vectorize) Optimization Init(0)
+Enable loop split and early-break vectorization improvements.
 
 fhoist-runtime-checks
 Common Var(flag_hoist_runtime_checks) Optimization Init(0)

@@ -119,6 +119,10 @@ public:
   // an EBB having consecutive positions.
   auto_vec<int> bb_to_rpo;
 
+  // The block that dominates the exit block, or null if the exit block
+  // is unreachable.
+  basic_block exit_block_dominator;
+
   // This stack is divided into sections, with one section for the
   // current basic block and one section for each dominating block.
   // Each element is a register definition.

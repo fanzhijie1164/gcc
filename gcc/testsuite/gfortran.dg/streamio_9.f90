@@ -1,4 +1,5 @@
 ! { dg-do run }
+! { dg-options "-ffloat-store" }
 ! PR29053 Stream IO test 9.
 ! Contributed by Jerry DeLisle <jvdelisle@gcc.gnu.org>.
 ! Test case derived from that given in PR by Steve Kargl.
@@ -28,4 +29,3 @@ program pr29053
    close(11, status="delete")
    close(12, status="delete")
 end program pr29053
-

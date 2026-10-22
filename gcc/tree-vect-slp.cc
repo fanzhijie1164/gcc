@@ -5981,6 +5981,42 @@ vect_analyze_slp (vec_info *vinfo, unsigned max_tree_size,
 	      }
 	  }
 
+      if (flag_loop_split_vectorize)
+	{
+	  /* Find and create SLP instances for inductions that have been forced
+	     live due to early break.  */
+	  edge latch_e = loop_latch_edge (LOOP_VINFO_LOOP (loop_vinfo));
+	  for (auto stmt_info : LOOP_VINFO_EARLY_BREAKS_LIVE_IVS (loop_vinfo))
+	    {
+	      vec<stmt_vec_info> stmts;
+	      vec<stmt_vec_info> roots = vNULL;
+	      vec<tree> remain = vNULL;
+	      gphi *phi = as_a<gphi *> (STMT_VINFO_STMT (stmt_info));
+	      tree def = gimple_phi_arg_def_from_edge (phi, latch_e);
+	      stmt_vec_info lc_info = loop_vinfo->lookup_def (def);
+	      if (lc_info)
+		{
+		  stmts.create (1);
+		  stmts.quick_push (vect_stmt_to_vectorize (lc_info));
+		  vect_build_slp_instance (vinfo, slp_inst_kind_reduc_group,
+					   stmts, roots, remain,
+					   max_tree_size, &limit,
+					   bst_map, NULL, force_single_lane);
+		}
+	      auto_vec<stmt_vec_info, 1> tem;
+	      tem.quick_push (stmt_info);
+	      if (!bst_map->get (tem))
+		{
+		  stmts.create (1);
+		  stmts.quick_push (stmt_info);
+		  vect_build_slp_instance (vinfo, slp_inst_kind_reduc_group,
+					   stmts, roots, remain,
+					   max_tree_size, &limit,
+					   bst_map, NULL, force_single_lane);
+		}
+	    }
+	}
+
       /* Find SLP sequences starting from gconds.  */
       for (auto cond : LOOP_VINFO_LOOP_CONDS (loop_vinfo))
 	{

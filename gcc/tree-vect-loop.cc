@@ -1073,6 +1073,7 @@ _loop_vec_info::_loop_vec_info (class loop *loop_in, vec_info_shared *shared)
     peeling_for_gaps (false),
     peeling_for_niter (false),
     early_breaks (false),
+    early_break_variable_start_byte_search (false),
     user_unroll (false),
     no_data_dependencies (false),
     has_mask_store (false),
@@ -1999,6 +2000,48 @@ vect_create_loop_vinfo (class loop *loop, vec_info_shared *shared,
 }
 
 
+/* Return true for byte-wise early-break search loops whose induction
+   variable starts at a run-time value.  */
+
+static bool
+vect_early_break_variable_start_byte_search_p (loop_vec_info loop_vinfo)
+{
+  if (!LOOP_VINFO_EARLY_BREAKS (loop_vinfo))
+    return false;
+
+  vec<data_reference_p> datarefs = LOOP_VINFO_DATAREFS (loop_vinfo);
+  if (datarefs.length () != 2)
+    return false;
+
+  for (data_reference *dr : datarefs)
+    {
+      tree ref_type = TREE_TYPE (DR_REF (dr));
+      if (!DR_IS_READ (dr)
+	  || !INTEGRAL_TYPE_P (ref_type)
+	  || TYPE_PRECISION (ref_type) != BITS_PER_UNIT
+	  || !DR_STEP (dr)
+	  || !integer_onep (DR_STEP (dr)))
+	return false;
+    }
+
+  class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+  edge preheader = loop_preheader_edge (loop);
+  for (gphi_iterator psi = gsi_start_phis (loop->header);
+       !gsi_end_p (psi); gsi_next (&psi))
+    {
+      gphi *phi = psi.phi ();
+      stmt_vec_info stmt_info = loop_vinfo->lookup_stmt (phi);
+      if (stmt_info
+	  && STMT_VINFO_DEF_TYPE (stmt_info) == vect_induction_def
+	  && !is_gimple_min_invariant (PHI_ARG_DEF_FROM_EDGE (phi,
+						       preheader)))
+	return true;
+    }
+
+  return false;
+}
+
+
 
 /* Scan the loop stmts and dependent on whether there are any (non-)SLP
    statements update the vectorization factor.  */
@@ -2835,6 +2878,10 @@ vect_analyze_loop_2 (loop_vec_info loop_vinfo, bool &fatal,
   /* Classify all cross-iteration scalar data-flow cycles.
      Cross-iteration cycles caused by virtual phis are analyzed separately.  */
   vect_analyze_scalar_cycles (loop_vinfo, slp == 2);
+
+  if (flag_loop_split_vectorize)
+    LOOP_VINFO_EARLY_BREAK_VARIABLE_START_BYTE_SEARCH (loop_vinfo)
+      = vect_early_break_variable_start_byte_search_p (loop_vinfo);
 
   vect_pattern_recog (loop_vinfo);
 
