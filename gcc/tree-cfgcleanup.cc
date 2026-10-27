@@ -433,9 +433,12 @@ tree_forwarder_block_p (basic_block bb, bool phi_wanted)
 		 would in turn require disambiguating them.  */
 	      return (single_pred_p (bb)
 		      || loops_state_satisfies_p
-		      	   (LOOPS_MAY_HAVE_MULTIPLE_LATCHES));
+			   (LOOPS_MAY_HAVE_MULTIPLE_LATCHES));
 	    }
-	  else if (bb->loop_father == loop_outer (dest->loop_father))
+	  /* cleanup_tree_cfg_noloop just created the loop preheader, don't
+	     remove it if it has phis.  */
+	  else if (bb->loop_father == loop_outer (dest->loop_father)
+		   && !phi_wanted)
 	    return !loops_state_satisfies_p (LOOPS_HAVE_PREHEADERS);
 	  /* Always preserve other edges into loop headers that are
 	     not simple latches or preheaders.  */
@@ -1674,4 +1677,3 @@ delete_unreachable_blocks_update_callgraph (cgraph_node *dst_node,
 
   return changed;
 }
-
